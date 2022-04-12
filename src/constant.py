@@ -4,6 +4,8 @@ DATE = "date"
 F_CAT = "feature_category_id"
 F_VAL = "feature_value_id"
 
+PREDICTION_COL = "score"
+
 RANDOM_SEED = 69
 
 TRAIN = "train"
