@@ -32,8 +32,6 @@ class AbstractRecommender(ABC):
     def __init__(self, dataset):
         # self.train_data = dataset.get_train_df()
         self.dataset = dataset
-        # to be set
-        self.item_multiple_buy = None
 
     @abstractmethod
     def predict(self, interactions: pd.DataFrame) -> pd.DataFrame:
@@ -269,7 +267,7 @@ class ItemSimilarityRecommender(AbstractRecommender, ABC):
             logger.debug(set_color("Predicting using time_weight importance...", "red"))
         sparse_interaction, user_mapping_dict, _ = interactions_to_sparse_matrix(
             interactions,
-            items_num=self.dataset._ARTICLES_NUM,
+            items_num=self.dataset._ITEMS_NUM,
             users_num=None,
             time_weight=self.time_weight,
         )
@@ -310,7 +308,7 @@ class UserSimilarityRecommender(AbstractRecommender, ABC):
             logger.debug(set_color("Predicting using time_weight importance...", "red"))
         sparse_interaction, user_mapping_dict, _ = interactions_to_sparse_matrix(
             interactions,
-            items_num=self.dataset._ARTICLES_NUM,
+            items_num=self.dataset._ITEMS_NUM,
             users_num=None,
             time_weight=self.time_weight,
         )
