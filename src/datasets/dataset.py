@@ -1,6 +1,7 @@
 import math
 import pickle
 from ast import Str
+from datetime import datetime
 from pathlib import Path
 from typing import AnyStr, Dict, List, Literal, Tuple
 
@@ -19,7 +20,7 @@ class Dataset:
     # Unique items in the dataset
     _ITEMS_NUM = 23_691
 
-    _SUBMISSION_FOLDER = Path(__file__).parent.parent / "submissions"
+    _SUBMISSION_FOLDER = Path(__file__).parent.parent.parent / "submissions"
 
     def __init__(self) -> None:
         self.dr = DataReader()
@@ -262,6 +263,30 @@ class Dataset:
         path = self.get_preprocessed_data_path() / Path("item_features.feather")
         df = pd.read_feather(path)
         return df
+
+    ##########################################
+    ########### Submission Handler ###########
+    ##########################################
+
+    def create_submission(self, recs_df: pd.DataFrame, sub_name: str) -> None:
+        """Create a submission"""
+        # dd/mm/YY H:M:S
+        now = datetime.now()
+        dt_string = now.strftime("%d_%m_%Y__%H_%M_%S__")
+
+        COLS = [SESS_ID, ITEM_ID, "rank"]
+        assert all(
+            [c in recs_df.columns for c in COLS]
+        ), f"Missing one of the mandatory cols: {COLS}"
+        # retrieve mapping dicts and map item id back to raw
+        _, new_raw_md = self.get_item_mapping_dicts()
+        recs_df[ITEM_ID] = recs_df[ITEM_ID].map(new_raw_md.get)
+        recs_df = recs_df[[SESS_ID, ITEM_ID, "rank"]]
+        recs_df.to_csv(
+            str(self.get_submission_folder()) + "/" + dt_string + sub_name + ".csv",
+            index=False,
+        )
+        print(f"Submission with name: {sub_name} created succesfully!")
 
 
 if __name__ == "__main__":

@@ -62,11 +62,11 @@ class AbstractRecommender(ABC):
 
         logger.debug(set_color(f"Removing seen items", "cyan"))
 
-        if white_list_mb_item is not None:
-            print("Considering white list items...")
-            interactions = interactions[
-                ~(interactions[ITEM_ID].isin(white_list_mb_item))
-            ]  # type: ignore
+        # if white_list_mb_item is not None:
+        #     print("Considering white list items...")
+        #     interactions = interactions[
+        #         ~(interactions[ITEM_ID].isin(white_list_mb_item))
+        #     ]  # type: ignore
 
         user_list = interactions[SESS_ID].values  # type: ignore
         item_list = interactions[ITEM_ID].values  # type: ignore
@@ -80,6 +80,13 @@ class AbstractRecommender(ABC):
 
         scores_array[user_list_mapped, item_list] = -np.inf
 
+        if white_list_mb_item is not None:
+            print("Considering white list items...")
+            # creating mask for candidate items
+            mask_array = np.ones(scores_array.shape[1], dtype=bool)
+            mask_array[white_list_mb_item] = False
+            scores_array[:, mask_array] = -np.inf
+
         scores = pd.DataFrame(scores_array, index=user_index)
 
         return scores
@@ -89,7 +96,7 @@ class AbstractRecommender(ABC):
         interactions: pd.DataFrame,
         cutoff: int = 12,
         remove_seen: bool = True,
-        batch_size: int = -1,
+        leaderboard: bool = False,
     ) -> pd.DataFrame:
         """
         Give recommendations up to a given cutoff to users inside `user_idxs` list
@@ -107,46 +114,32 @@ class AbstractRecommender(ABC):
         Returns:
             pd.DataFrame: DataFrame with predictions for users
         """
-        # if interactions is None we are predicting for the wh  ole users in the train dataset
-        logger.debug(set_color(f"Recommending items MONOCORE", "cyan"))
+        whitelist_items = None
+        if leaderboard:
+            whitelist_items = self.dataset.get_candidate_items().values.squeeze()
+
+        logger.info(set_color(f"Recommending items MONOCORE", "cyan"))
 
         unique_user_ids = interactions[SESS_ID].unique()
-        logger.debug(set_color(f"Predicting for: {len(unique_user_ids)} users", "cyan"))
-        # if  batch_size == -1 we are not batching the recommendation process
-        num_batches = (
-            1 if batch_size == -1 else math.ceil(len(unique_user_ids) / batch_size)
-        )
-        logger.debug(set_color(f"num batches: {num_batches}", "cyan"))
-        user_batches = np.array_split(unique_user_ids, num_batches)
+        logger.info(set_color(f"Predicting for: {len(unique_user_ids)} users", "cyan"))
 
         # MONO-CORE VERSION
-        recs_dfs_list = []
-        for user_batch in tqdm(user_batches):
-            interactions_slice = interactions[interactions[SESS_ID].isin(user_batch)]
-            logger.debug(set_color(f"getting predictions...", "cyan"))
-            scores = self.predict(interactions_slice)
-            logger.debug(set_color(f"done...", "cyan"))
-            # set the score of the items used during the training to -inf
-            if remove_seen:
-                scores = AbstractRecommender.remove_seen_items(
-                    scores, interactions_slice
-                )
-            array_scores = scores.to_numpy()
-            user_ids = scores.index.values
-            # TODO: we can use GPU here (tensorflow ?)
-            items, scores = get_top_k(
-                scores=array_scores, top_k=cutoff, sort_top_k=True
+        scores = self.predict(interactions)
+        # set the score of the items used during the training to -inf
+        if remove_seen:
+            scores = AbstractRecommender.remove_seen_items(
+                scores, interactions, white_list_mb_item=whitelist_items
             )
-            # create user array to match shape of retrievied items
-            users = np.repeat(user_ids, cutoff).reshape(len(user_ids), -1)
-            recs_df = pd.DataFrame(
-                zip(users.flatten(), items.flatten(), scores.flatten()),  # type: ignore
-                columns=[SESS_ID, ITEM_ID, PREDICTION_COL],
-            )
-            recs_dfs_list.append(recs_df)
+        array_scores = scores.to_numpy()
+        user_ids = scores.index.values
+        items, scores = get_top_k(scores=array_scores, top_k=cutoff, sort_top_k=True)
+        # create user array to match shape of retrievied items
+        users = np.repeat(user_ids, cutoff).reshape(len(user_ids), -1)
+        recommendation_df = pd.DataFrame(
+            zip(users.flatten(), items.flatten(), scores.flatten()),  # type: ignore
+            columns=[SESS_ID, ITEM_ID, PREDICTION_COL],
+        )
 
-        # concat all the batch recommendations dfs
-        recommendation_df = pd.concat(recs_dfs_list, axis=0)
         # add item rank
         recommendation_df["rank"] = np.tile(
             np.arange(1, cutoff + 1), len(unique_user_ids)
