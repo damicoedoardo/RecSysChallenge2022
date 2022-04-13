@@ -50,7 +50,7 @@ def interactions_to_sparse_matrix(
     interactions: pd.DataFrame,
     users_num: Union[int, None] = None,
     items_num: Union[int, None] = None,
-    time_weight: bool = False,
+    time_weight: float = None,
 ) -> Tuple[sps.coo_matrix, Dict, Dict]:
     """Convert interactions df into a sparse matrix
 
@@ -95,8 +95,19 @@ def interactions_to_sparse_matrix(
     row_data = interactions[SESS_ID].values  # type: ignore
     col_data = interactions[ITEM_ID].values  # type: ignore
 
-    if time_weight:
-        raise NotImplementedError("Time weight is still not implmented")
+    if time_weight is not None:
+        print("Using Time Weight on Interaction matrix")
+        interactions["last_buy"] = interactions.groupby(SESS_ID)[DATE].transform(max)
+        interactions["first_buy"] = interactions.groupby(SESS_ID)[DATE].transform(min)
+        interactions["time_score"] = 1 / (
+            (
+                (interactions["last_buy"] - interactions[DATE]).apply(
+                    lambda x: x.total_seconds() / 3600
+                )
+            )
+            + 1
+        )
+        data = (interactions["time_score"].values) ** time_weight  # type: ignore
     else:
         data = np.ones(len(row_data))
 

@@ -242,7 +242,11 @@ class ItemSimilarityRecommender(AbstractRecommender, ABC):
     Each recommender extending this class has to implement compute_similarity_matrix() method
     """
 
-    def __init__(self, dataset, time_weight: bool = False):
+    def __init__(
+        self,
+        dataset,
+        time_weight: Union[float, None] = None,
+    ):
         super().__init__(dataset=dataset)
         self.time_weight = time_weight
         self.similarity_matrix = None
@@ -283,7 +287,11 @@ class UserSimilarityRecommender(AbstractRecommender, ABC):
     Each recommender extending this class has to implement compute_similarity_matrix() method
     """
 
-    def __init__(self, dataset, time_weight: bool = False):
+    def __init__(
+        self,
+        dataset,
+        time_weight: Union[float, None] = None,
+    ):
         super().__init__(dataset=dataset)
         self.time_weight = time_weight
         self.similarity_matrix = None

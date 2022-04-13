@@ -1,0 +1,23 @@
+method: grid
+metric:
+  goal: maximize
+  name: mrr
+parameters:
+  topk:
+    values: [100, 250, 500, 1000, 2000, 3500]
+  shrink:
+    values: [0, 1, 10, 100, 1000]
+  normalization:
+    values: [True, False]
+  time_weight:
+    values: [0, 1, 0.5, 0.25, 2, 5, 10, 100]
+  l:
+    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+  t1:
+    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+  t2:
+    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+  c:
+    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+
+program: src/models/itemknn/train_itemknn.py
