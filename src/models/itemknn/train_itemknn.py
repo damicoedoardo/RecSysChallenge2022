@@ -1,4 +1,5 @@
 import argparse
+from ast import arg
 from calendar import c
 from typing import Union
 
@@ -16,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument("--topk", type=int, default=1000)
     parser.add_argument("--shrink", type=int, default=0)
     parser.add_argument("--normalization", type=bool, default=False)
-    parser.add_argument("--time_weight", default=None)
+    parser.add_argument("--time_weight", default="None")
     parser.add_argument("--l", type=float, default=0.5)
     parser.add_argument("--t1", type=float, default=1.0)
     parser.add_argument("--t2", type=float, default=1.0)
@@ -27,6 +28,10 @@ if __name__ == "__main__":
 
     # parse command line
     args = vars(parser.parse_args())
+    if args["time_weight"] == "None":
+        args["time_weight"] = None
+    else:
+        args["time_weight"] = float(args["time_weight"])
 
     # initialize wandb
     wandb.init(config=args)

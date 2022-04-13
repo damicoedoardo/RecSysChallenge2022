@@ -8,8 +8,7 @@ import scipy.sparse as sps
 import similaripy
 from sklearn.metrics.pairwise import cosine_similarity
 from src.recommender_interface import ItemSimilarityRecommender
-from src.utils.sparse_matrix import (interactions_to_sparse_matrix,
-                                     truncate_top_k)
+from src.utils.sparse_matrix import interactions_to_sparse_matrix, truncate_top_k
 
 
 class ItemKNN(ItemSimilarityRecommender):
@@ -42,7 +41,6 @@ class ItemKNN(ItemSimilarityRecommender):
             interaction_df,
             items_num=self.dataset._ITEMS_NUM,
             users_num=None,
-            time_weight=self.time_weight,
         )
         if self.normalization:
             sparse_interaction = similaripy.normalization.bm25(sparse_interaction)
