@@ -6,13 +6,16 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sps
 import similaripy
+from matplotlib.pyplot import axis
 from sklearn.metrics.pairwise import cosine_similarity
+from src.constant import ITEM_ID
 from src.recommender_interface import ItemSimilarityRecommender
 from src.utils.sparse_matrix import interactions_to_sparse_matrix, truncate_top_k
+from torch import topk
 
 
-class ItemKNN(ItemSimilarityRecommender):
-    name = "ItemKNN"
+class CBItemKNN(ItemSimilarityRecommender):
+    name = "CB-ItemKNN"
 
     def __init__(
         self,
@@ -37,16 +40,17 @@ class ItemKNN(ItemSimilarityRecommender):
             self.c = kwargs["c"]
 
     def compute_similarity_matrix(self, interaction_df: pd.DataFrame) -> None:
-        sparse_interaction, user_mapping_dict, _ = interactions_to_sparse_matrix(
-            interaction_df,
-            items_num=self.dataset._ITEMS_NUM,
-            users_num=None,
-        )
+        # load content matrix
+        content_matrix = self.dataset.get_oh_item_features()
+        _ = content_matrix.pop(ITEM_ID)
+        # sparse_content_matrix = sps.csr_matrix(content_matrix.values)
+        sparse_content_matrix = sps.csr_matrix(content_matrix.values, dtype=np.float32)
+
         if self.normalization:
-            sparse_interaction = similaripy.normalization.bm25(sparse_interaction)
+            sparse_content_matrix = similaripy.normalization.bm25(sparse_content_matrix)
 
         sim = similaripy.s_plus(
-            sparse_interaction.T,
+            sparse_content_matrix,
             k=self.topk,
             l=self.l,
             t1=self.t1,
