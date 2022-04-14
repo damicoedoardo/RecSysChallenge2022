@@ -48,11 +48,13 @@ class DataReader:
     def get_test_leaderboard_sessions(self) -> pd.DataFrame:
         path = self.get_data_path() / self._TEST_LEADEARBOARD_SESSIONS
         df = pd.read_csv(path)
+        df["date"] = pd.to_datetime(df["date"])
         return df
 
     def get_test_final_sessions(self) -> pd.DataFrame:
         path = self.get_data_path() / self._TEST_FINAL_SESSIONS
         df = pd.read_csv(path)
+        df["date"] = pd.to_datetime(df["date"])
         return df
 
     def get_candidate_items(self) -> pd.DataFrame:

@@ -55,6 +55,10 @@ class Dataset:
         self.get_submission_folder().mkdir(parents=True, exist_ok=True)
         self.get_mapping_dict_folder().mkdir(parents=True, exist_ok=True)
 
+    ##########################################
+    ####### PREPROCESS DATA METHODS #########
+    ##########################################
+
     def preprocess_data(self) -> None:
         """Remap the item ids to consecutive on all the raw dfs"""
 
@@ -191,6 +195,29 @@ class Dataset:
 
         print("- Saved succesfully!")
 
+    def preprocess_item_features_oh(self) -> None:
+        """Create and save one-hot features for the items"""
+        item_features = self.get_item_features()
+        oh_cat = pd.get_dummies(item_features[F_CAT], prefix="cat")
+        oh_val = pd.get_dummies(item_features[F_VAL], prefix="val")
+        item_features_oh = item_features.join(oh_cat).join(oh_val)
+        item_features_oh = item_features_oh.groupby(ITEM_ID).sum()
+        item_features_oh = item_features_oh.drop([F_VAL, F_CAT], axis=1).reset_index()
+        # Save oh features
+        item_features_oh.to_feather(
+            self.get_preprocessed_data_path() / "oh_item_features.feather"  # type: ignore
+        )
+        print("- One Hot features Saved succesfully!")
+
+    ##########################################
+    ##### GET PREPROCESSED DATA METHODS ######
+    ##########################################
+
+    def get_oh_item_features(self) -> pd.DataFrame:
+        path = self.get_preprocessed_data_path() / Path("oh_item_features.feather")
+        df = pd.read_feather(path)
+        return df
+
     def get_split(self) -> Dict[str, List[pd.DataFrame]]:
         """Return a dictionary containing the train val and test data
 
@@ -228,10 +255,6 @@ class Dataset:
 
         return split_dict
 
-    ##########################################
-    ##### GET PREPROCESSED DATA METHODS ######
-    ##########################################
-
     def get_train_sessions(self) -> pd.DataFrame:
         path = self.get_preprocessed_data_path() / Path("train_sessions.feather")
         df = pd.read_feather(path)
@@ -247,11 +270,13 @@ class Dataset:
     def get_test_leaderboard_sessions(self) -> pd.DataFrame:
         path = self.get_preprocessed_data_path() / Path("leaderboard_sessions.feather")
         df = pd.read_feather(path)
+        df[DATE] = pd.to_datetime(df[DATE])
         return df
 
     def get_test_final_sessions(self) -> pd.DataFrame:
         path = self.get_preprocessed_data_path() / Path("test_final_sessions.feather")
         df = pd.read_feather(path)
+        df[DATE] = pd.to_datetime(df[DATE])
         return df
 
     def get_candidate_items(self) -> pd.DataFrame:
@@ -282,8 +307,10 @@ class Dataset:
         _, new_raw_md = self.get_item_mapping_dicts()
         recs_df[ITEM_ID] = recs_df[ITEM_ID].map(new_raw_md.get)
         recs_df = recs_df[[SESS_ID, ITEM_ID, "rank"]]
+        for c in recs_df.dtypes:
+            assert c == int, "Nan on sub probably!"
         recs_df.to_csv(
-            str(self.get_submission_folder()) + "/" + dt_string + sub_name + ".csv",
+            str(self.get_submission_folder()) + "/" + sub_name + ".csv",
             index=False,
         )
         print(f"Submission with name: {sub_name} created succesfully!")
@@ -293,7 +320,4 @@ if __name__ == "__main__":
     dataset = Dataset()
     # dataset.preprocess_data()
     # dataset.split_data(splits_perc=[0.8, 0.1, 0.1])
-    split_dict = dataset.get_split()
-    train, train_label = split_dict[TRAIN]
-    print(train)
-    print(train_label)
+    dataset.preprocess_item_features_oh()

@@ -4,20 +4,20 @@ metric:
   name: mrr
 parameters:
   topk:
-    values: [100, 500, 1000]
+    values: [2000]
   shrink:
     values: [0]
   normalization:
     values: [False]
   time_weight:
-    values: [None]
+    values: []
   l:
-    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+    values: [1]
   t1:
-    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+    values: [0.1]
   t2:
-    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+    values: [0]
   c:
-    values: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+    values: [0.3]
 
 program: src/models/itemknn/train_itemknn.py
