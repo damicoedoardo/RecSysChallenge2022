@@ -1,6 +1,4 @@
 import argparse
-from ast import arg
-from calendar import c
 from typing import Union
 
 import pandas as pd
@@ -18,10 +16,10 @@ if __name__ == "__main__":
     parser.add_argument("--shrink", type=int, default=0)
     parser.add_argument("--normalization", type=bool, default=False)
     parser.add_argument("--time_weight", default="None")
-    parser.add_argument("--l", type=float, default=0.5)
-    parser.add_argument("--t1", type=float, default=1.0)
-    parser.add_argument("--t2", type=float, default=1.0)
-    parser.add_argument("--c", type=float, default=0.5)
+    parser.add_argument("--l", type=float, default=1)
+    parser.add_argument("--t1", type=float, default=0.3)
+    parser.add_argument("--t2", type=float, default=0)
+    parser.add_argument("--c", type=float, default=0.3)
 
     parser.add_argument("--remove_seen", type=bool, default=True)
     parser.add_argument("--cutoff", type=int, default=100)

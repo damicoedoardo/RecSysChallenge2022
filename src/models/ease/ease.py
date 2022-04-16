@@ -31,6 +31,21 @@ class EASE(ItemSimilarityRecommender):
             users_num=None,
         )
 
+        # computing user mat
+        user_degree = np.array(sparse_interaction.sum(axis=1))
+        d_user_inv = np.power(user_degree, -0.5).flatten()
+        d_user_inv[np.isinf(d_user_inv)] = 0.0
+        d_user_inv_diag = sps.diags(d_user_inv)
+
+        item_degree = np.array(sparse_interaction.sum(axis=0))
+        d_item_inv = np.power(item_degree, -0.5).flatten()
+        d_item_inv[np.isinf(d_item_inv)] = 0.0
+        d_item_inv_diag = sps.diags(d_item_inv)
+
+        sparse_interaction = d_user_inv_diag.dot(sparse_interaction).dot(
+            d_item_inv_diag
+        )
+
         # Compute gram matrix
         G = (sparse_interaction.T @ sparse_interaction).toarray()
         diagIndices = np.diag_indices(G.shape[0])

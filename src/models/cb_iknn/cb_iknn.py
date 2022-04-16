@@ -42,20 +42,29 @@ class CBItemKNN(ItemSimilarityRecommender):
     def compute_similarity_matrix(self, interaction_df: pd.DataFrame) -> None:
         # load content matrix
         content_matrix = self.dataset.get_oh_item_features()
-        _ = content_matrix.pop(ITEM_ID)
+        content_matrix = content_matrix.drop(columns=[ITEM_ID])
+
+        cols_to_drop = [c for c in content_matrix.columns if "cat" in c]
+        content_matrix = content_matrix.drop(columns=cols_to_drop)
         # sparse_content_matrix = sps.csr_matrix(content_matrix.values)
         sparse_content_matrix = sps.csr_matrix(content_matrix.values, dtype=np.float32)
 
         if self.normalization:
             sparse_content_matrix = similaripy.normalization.bm25(sparse_content_matrix)
 
-        sim = similaripy.s_plus(
+        # sim = similaripy.s_plus(
+        #     sparse_content_matrix,
+        #     k=self.topk,
+        #     l=self.l,
+        #     t1=self.t1,
+        #     t2=self.t2,
+        #     c=self.c,
+        #     shrink=self.shrink,
+        # )
+
+        sim = similaripy.cosine(
             sparse_content_matrix,
             k=self.topk,
-            l=self.l,
-            t1=self.t1,
-            t2=self.t2,
-            c=self.c,
             shrink=self.shrink,
         )
 

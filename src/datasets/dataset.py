@@ -3,7 +3,7 @@ import pickle
 from ast import Str
 from datetime import datetime
 from pathlib import Path
-from typing import AnyStr, Dict, List, Literal, Tuple
+from typing import AnyStr, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -216,6 +216,7 @@ class Dataset:
     def get_oh_item_features(self) -> pd.DataFrame:
         path = self.get_preprocessed_data_path() / Path("oh_item_features.feather")
         df = pd.read_feather(path)
+        df = df.set_index(ITEM_ID)
         return df
 
     def get_split(self) -> Dict[str, List[pd.DataFrame]]:
