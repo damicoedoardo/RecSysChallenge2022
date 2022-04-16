@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv, SAGEConv
+from torch_geometric.transforms import ToSparseTensor
 from tqdm import tqdm
 
 from src.constant import *
@@ -19,8 +20,8 @@ from src.utils.sparse_matrix import interactions_to_sparse_matrix
 class GCN(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = SAGEConv(graph_dataset.num_node_features, 256)
-        self.conv2 = SAGEConv(256, 128)
+        self.conv1 = GCNConv(graph_dataset.num_node_features, 256)
+        self.conv2 = GCNConv(256, 128)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
@@ -55,9 +56,12 @@ if __name__ == "__main__":
         np.array([start_node_edge, arrival_node_edge]), dtype=torch.long
     )
 
+    sparse_edge_index = edge_index.to_sparse()
+
     item_features = dataset.get_oh_item_features()
     x = torch.tensor(item_features.values, dtype=torch.float)
-    data = Data(x=x, edge_index=edge_index)
+    data = Data(x=x, edge_index=sparse_edge_index)
+
     graph_dataset = data
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
