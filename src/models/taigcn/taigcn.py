@@ -1,5 +1,3 @@
-from pickle import NONE
-from turtle import forward
 from typing import Tuple
 
 import numpy as np
@@ -8,13 +6,11 @@ import similaripy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from matplotlib.pyplot import axis
-from sklearn import datasets
 from sklearn.metrics.pairwise import cosine_similarity
 from src.constant import *
 from src.recommender_interface import RepresentationBasedRecommender
 from src.utils.pandas_utils import remap_column_consecutive
-from utils.sparse_matrix import interactions_to_sparse_matrix
+from src.utils.sparse_matrix import interactions_to_sparse_matrix
 
 
 class WeightedSumSessEmbedding(nn.Module):
@@ -34,18 +30,25 @@ class WeightedSumSessEmbedding(nn.Module):
 
     def forward(self, user_batch, embeddings):
 
-        user_item_list = [
-            torch.tensor(self.train_data_dict[x], dtype=torch.int64)
-            for x in user_batch.cpu().numpy()
-        ]
+        # user_item_list = [
+        #     torch.tensor(self.train_data_dict[x], dtype=torch.int64).to(self.device)
+        #     for x in user_batch.cpu().numpy()
+        # ]
         # Move the user item list to the correct device
-        user_item_list = list(map(lambda x: x.to(self.device), user_item_list))
-        user_embeddings = torch.stack(
-            [
-                torch.mean(torch.index_select(embeddings, 0, x), dim=0)
-                for x in user_item_list
-            ]
+        # user_item_list = list(map(lambda x: x.to(self.device), user_item_list))
+        # user_embeddings = torch.stack(
+        #     [
+        #         torch.mean(torch.index_select(embeddings, 0, x), dim=0)
+        #         for x in user_batch
+        #     ]
+        # )
+        row_idx, col_idx, data_tensor, num_ids = user_batch
+        user_batch = torch.sparse_coo_tensor(
+            torch.stack([row_idx, col_idx]),
+            data_tensor,
+            [num_ids, self.dataset._ITEMS_NUM],
         )
+        user_embeddings = user_batch.matmul(embeddings)
         return user_embeddings
 
 
@@ -60,7 +63,8 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         self,
         dataset,
         sess_embedding_module: nn.Module,
-        convolution_depth: list,
+        convolution_depth: int,
+        features_layer: list,
         normalize_propagation: bool = False,
         device: torch.device = torch.device("cpu"),
     ) -> None:
@@ -71,13 +75,18 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         )
         nn.Module.__init__(self)
 
+        self.features_layer = features_layer
         self.sess_embedding_module = sess_embedding_module
         self.device = device
         self.dataset = dataset
         self.normalize_propagation = normalize_propagation
+        self.full_data_dict = (
+            dataset.get_train_sessions().groupby(SESS_ID)[ITEM_ID].apply(list)
+        )
         # self.user_embedding_module = user_embedding_module
 
         self.convolution_depth = convolution_depth
+        self.activation = torch.nn.LeakyReLU()
 
         propagation_m = self._compute_propagation_matrix()
         self.register_buffer("S", propagation_m)
@@ -88,6 +97,15 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         # save the number of features available
         self.features_num = feature_tensor.shape[1]
         print(f"Num features available: {self.features_num}")
+
+        self.item_embeddings = torch.nn.Parameter(
+            torch.empty(
+                self.dataset._ITEMS_NUM,
+                128,
+            ),
+            requires_grad=True,
+        )
+        nn.init.xavier_normal_(self.item_embeddings)
 
         self.weight_matrices = self._create_weights_matrices()
 
@@ -101,6 +119,7 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
             users_num=None,
         )
         similarity = cosine_similarity(sparse_interaction.T, dense_output=False)
+        # similarity = similaripy.cosine(sparse_interaction.T, k=100, format_output="csr")
 
         if self.normalize_propagation:
             similarity = similaripy.normalization.normalize(
@@ -122,36 +141,83 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
     def _create_weights_matrices(self) -> nn.ModuleDict:
         """Create linear transformation layers for graph convolution"""
         weights = dict()
-        for i, embedding_size in enumerate(self.convolution_depth):
+        for i, embedding_size in enumerate(self.features_layer):
             if i == 0:
                 weights["W_{}".format(i)] = nn.Linear(
-                    self.features_num, embedding_size, bias=False
+                    self.features_num, embedding_size, bias=True
                 )
             else:
                 weights["W_{}".format(i)] = nn.Linear(
-                    self.convolution_depth[i - 1], embedding_size, bias=False
+                    self.features_layer[i - 1], embedding_size, bias=True
                 )
         return nn.ModuleDict(weights)
 
     def forward(self, batch):
-        item_embeddings = self.item_features
-        for i, _ in enumerate(self.convolution_depth):
-            prop_step = self.S.matmul(item_embeddings)  # type: ignore
-            linear_layer = self.weight_matrices[f"W_{i}"]
-            item_embeddings = linear_layer(prop_step)
+        item_embeddings = self.item_embeddings
+        item_features = self.item_features
 
-        s = batch[0]
-        s_emb = self.sess_embedding_module(s, item_embeddings)
-        return s_emb, item_embeddings
+        # apply FFNN on features
+        for i, _ in enumerate(self.features_layer):
+            linear_layer = self.weight_matrices[f"W_{i}"]
+            if i == len(self.features_layer) - 1:
+                item_features = linear_layer(item_features)
+            else:
+                item_features = self.activation(linear_layer(item_features))
+        # concat item embeddings and item features and then perform convolution
+        final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
+
+        # final_embeddings = item_embeddings
+
+        for i in range(self.convolution_depth):
+            final_embeddings = self.S.matmul(final_embeddings)  # type: ignore
+
+        s = (batch[0], batch[1], batch[2], batch[3])
+        s_emb = self.sess_embedding_module(s, final_embeddings)
+        # s_emb = None
+        return s_emb, final_embeddings
 
     def compute_representations(
         self, interactions: pd.DataFrame
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         unique_sess_ids = interactions[SESS_ID].unique()
-        sess_ids = torch.unsqueeze(
-            torch.tensor(unique_sess_ids, dtype=torch.int64), dim=0
+
+        col_idx = torch.cat(
+            [
+                torch.tensor(self.full_data_dict[u], dtype=torch.int64)
+                for u in unique_sess_ids
+            ]
+        ).to(self.device)
+        row_idx = torch.cat(
+            [
+                torch.tensor(
+                    np.repeat(idx, len(self.full_data_dict[u])), dtype=torch.int64
+                )
+                for u, idx in zip(unique_sess_ids, range(len(unique_sess_ids)))
+            ]
+        ).to(self.device)
+        data_tensor = torch.cat(
+            [
+                torch.tensor(
+                    np.repeat(
+                        1 / len(self.full_data_dict[u]), len(self.full_data_dict[u])
+                    ),
+                    dtype=torch.float32,
+                )
+                for u in unique_sess_ids
+            ]
+        ).to(self.device)
+
+        # sess_ids = torch.unsqueeze(
+        #     torch.tensor(unique_sess_ids, dtype=torch.int64), dim=0
+        # )
+        sess_emb, item_emb = self(
+            [
+                row_idx,
+                col_idx,
+                data_tensor,
+                torch.tensor(len(unique_sess_ids)).to(self.device),
+            ],
         )
-        sess_emb, item_emb = self(sess_ids)
 
         sess_emb = sess_emb.detach().cpu().numpy()
         item_emb = item_emb.detach().cpu().numpy()

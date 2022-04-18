@@ -2,17 +2,20 @@ import argparse
 import time
 from ast import arg
 
+import numpy as np
 import torch
-from evaluation import compute_mrr
-from models.taigcn.taigcn import TAIGCN, WeightedSumSessEmbedding
+import wandb
 from src.constant import *
 from src.datasets.dataset import Dataset
+from src.evaluation import compute_mrr
+from src.models.taigcn.taigcn import TAIGCN, WeightedSumSessEmbedding
+from src.utils.decorator import timing
+from src.utils.general import pick_gpu_lowest_memory
 from src.utils.pytorch.datasets import TripletsBPRDataset
+from src.utils.pytorch.losses import bpr_loss
 from torch.utils import mkldnn as mkldnn_utils
 from torch.utils.data import DataLoader, RandomSampler
 from tqdm import tqdm
-from utils.decorator import timing
-from utils.pytorch.losses import bpr_loss
 
 
 # define the training procedure
@@ -22,8 +25,8 @@ def train_routine(batch):
     # optimization forward only the embeddings of the batch
     # compute embeddings
     x_u, item_embeddings = model(batch)
-    x_i = torch.index_select(item_embeddings, 0, batch[1])  # type: ignore
-    x_j = torch.index_select(item_embeddings, 0, batch[2])  # type: ignore
+    x_i = torch.index_select(item_embeddings, 0, batch[4])  # type: ignore
+    x_j = torch.index_select(item_embeddings, 0, batch[5])  # type: ignore
     loss = bpr_loss(x_u, x_i, x_j)
 
     loss.backward()
@@ -43,7 +46,7 @@ def validation_routine():
     )
     print("Computing mrr...")
     mrr = compute_mrr(recs, val_label)
-
+    return mrr
     # wandb log validation metric
     # if args["wandb"]:
     #     res_dict = val_evaluator.result_dict
@@ -56,24 +59,27 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("train TAIGCN")
 
     # model parameters
-    parser.add_argument("--convolution_depth", type=list, default=[256, 128])
+    parser.add_argument("--convolution_depth", type=int, default=2)
+    parser.add_argument("--features_layer", type=list, default=[128])
     parser.add_argument("--embedding_dimension", type=int, default=64)
     parser.add_argument("--features_num", type=int, default=968)
-    parser.add_argument("--normalize_propagation", type=bool, default=True)
+    parser.add_argument("--normalize_propagation", type=bool, default=False)
 
     # train parameters
     parser.add_argument("--epochs", type=int, default=1000)
-    parser.add_argument("--val_every", type=int, default=200)
-    parser.add_argument("--batch_size", type=int, default=2048)
-    parser.add_argument("--l2_reg", type=float, default=1e-5)
+    parser.add_argument("--val_every", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=1024)
+    parser.add_argument("--l2_reg", type=float, default=0)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
 
     # GPU config
     parser.add_argument("--gpu", type=bool, default=True)
-    parser.add_argument("--gpu_number", type=str, default="2")
 
     # get variables
     args = vars(parser.parse_args())
+
+    # initialize wandb
+    wandb.init(config=args)
 
     dataset = Dataset()
     split_dict = dataset.get_split()
@@ -86,7 +92,7 @@ if __name__ == "__main__":
 
     # put the model on the correct device
     device = torch.device(
-        "cuda:{}".format(args["gpu_number"])
+        "cuda:{}".format(pick_gpu_lowest_memory())
         if (torch.cuda.is_available() and args["gpu"])
         else "cpu"
     )
@@ -101,6 +107,7 @@ if __name__ == "__main__":
         dataset,
         sess_embedding_module=sess_emb_module,
         convolution_depth=args["convolution_depth"],
+        features_layer=args["features_layer"],
         normalize_propagation=args["normalize_propagation"],
         device=device,
     )
@@ -111,11 +118,48 @@ if __name__ == "__main__":
         train_dataset, replacement=True, num_samples=len(train_dataset)
     )
     print("Number of training samples: {}".format(len(train_dataset)))
+
+    full_data_dict = full_data.groupby(SESS_ID)[ITEM_ID].apply(list)
+
+    def collate_fn(data):
+        user_ids, item_i, item_j = zip(*data)
+        col_idx = torch.cat(
+            [torch.tensor(full_data_dict[u], dtype=torch.int64) for u in user_ids]
+        )
+        row_idx = torch.cat(
+            [
+                torch.tensor(np.repeat(idx, len(full_data_dict[u])), dtype=torch.int64)
+                for u, idx in zip(user_ids, range(len(user_ids)))
+            ]
+        )
+        data_tensor = torch.cat(
+            [
+                torch.tensor(
+                    np.repeat(1 / len(full_data_dict[u]), len(full_data_dict[u])),
+                    dtype=torch.float32,
+                )
+                for u in user_ids
+            ]
+        )
+
+        # row_idx = torch.cat([np.arange(len(x)) for x in col_idx], dtype=torch.int64)
+        # data_tensor = torch.tensor(np.ones(len(col_idx)), dtype=torch.float32)
+
+        return (
+            row_idx,
+            col_idx,
+            data_tensor,
+            torch.tensor(len(user_ids)),
+            torch.tensor(item_i),
+            torch.tensor(item_j),
+        )
+
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=args["batch_size"],
-        num_workers=32,
+        num_workers=72,
         sampler=rnd_sampler,
+        collate_fn=collate_fn,
     )
 
     model = model.to(device)
@@ -127,22 +171,22 @@ if __name__ == "__main__":
 
     for epoch in range(1, args["epochs"]):
         cum_loss = 0
-        current_batch = 0
         t1 = time.time()
         for batch in tqdm(train_dataloader):
             # move the batch to the correct device
             batch = [b.to(device) for b in batch]
             loss = train_routine(batch)
-
             cum_loss += loss
-            current_batch += 1
-            if current_batch % 5 == 0:
-                cum_loss /= current_batch
-                log = "Batch: {:03d}, Loss: {:.4f}, Time: {:.4f}s"
-                print(log.format(current_batch, cum_loss, time.time() - t1))
-            if current_batch % args["val_every"] == 0:
-                with torch.no_grad():
-                    validation_routine()
+
+        cum_loss /= len(train_dataloader)
+        log = "Epoch: {:03d}, Loss: {:.4f}, Time: {:.4f}s"
+        print(log.format(epoch, cum_loss, time.time() - t1))
+        wandb.log({"BPR loss": cum_loss}, step=epoch)
+
+        if epoch % args["val_every"] == 0:
+            with torch.no_grad():
+                mrr = validation_routine()
+                wandb.log({"mrr": mrr}, step=epoch)
 
         # wandb log loss every epoch
         # if args["wandb"]:

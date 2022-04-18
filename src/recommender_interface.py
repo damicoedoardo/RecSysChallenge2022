@@ -385,12 +385,11 @@ class RepresentationBasedRecommender(AbstractRecommender, ABC):
         device = torch.device(
             "cuda:{}".format(2) if (torch.cuda.is_available()) else "cpu"
         )
-        print("a")
+
         u_tensor = torch.tensor(users_repr_df.to_numpy()).to(device)
         i_tensor = torch.tensor(items_repr_df.to_numpy()).to(device)
         arr_scores = torch.matmul(u_tensor, torch.t(i_tensor)).cpu().numpy()
         # arr_scores = users_repr_df.to_numpy().dot(items_repr_df.to_numpy().T)
-        print("b")
+
         scores = pd.DataFrame(arr_scores, index=users_repr_df.index)
-        print("c")
         return scores

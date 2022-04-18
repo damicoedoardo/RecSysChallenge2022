@@ -28,6 +28,7 @@ networkx = "^2.8"
 xgboost = "^1.5.2"
 h5py = "^3.6.0"
 tensorflow = "^2.8.0"
+pytorch-lightning = "^1.6.1"
 
 [tool.poetry.dev-dependencies]
 
