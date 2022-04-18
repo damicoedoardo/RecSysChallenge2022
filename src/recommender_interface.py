@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from textwrap import dedent
 from time import time
 from tkinter.messagebox import NO
-from typing import Union
+from typing import Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -347,7 +347,9 @@ class RepresentationBasedRecommender(AbstractRecommender, ABC):
         super().__init__(dataset)
 
     @abstractmethod
-    def compute_representations(self, interactions: pd.DataFrame) -> pd.DataFrame:
+    def compute_representations(
+        self, interactions: pd.DataFrame
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Compute users and items representations
 
         Args:
@@ -380,6 +382,15 @@ class RepresentationBasedRecommender(AbstractRecommender, ABC):
         items_repr_df.sort_index(inplace=True)
 
         # compute the scores as dot product between users and items representations
-        arr_scores = users_repr_df.to_numpy().dot(items_repr_df.to_numpy().T)
+        device = torch.device(
+            "cuda:{}".format(2) if (torch.cuda.is_available()) else "cpu"
+        )
+        print("a")
+        u_tensor = torch.tensor(users_repr_df.to_numpy()).to(device)
+        i_tensor = torch.tensor(items_repr_df.to_numpy()).to(device)
+        arr_scores = torch.matmul(u_tensor, torch.t(i_tensor)).cpu().numpy()
+        # arr_scores = users_repr_df.to_numpy().dot(items_repr_df.to_numpy().T)
+        print("b")
         scores = pd.DataFrame(arr_scores, index=users_repr_df.index)
+        print("c")
         return scores
