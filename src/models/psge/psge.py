@@ -35,27 +35,29 @@ class PSGE(ItemSimilarityRecommender):
         d_user_inv[np.isinf(d_user_inv)] = 0.0
         d_user_inv_diag = sps.diags(d_user_inv)
 
-        d_user = np.power(user_degree, self.alpha).flatten()
-        d_user[np.isinf(d_user)] = 0.0
-        d_user_diag = sps.diags(d_user)
+        # d_user = np.power(user_degree, self.alpha).flatten()
+        # d_user[np.isinf(d_user)] = 0.0
+        # d_user_diag = sps.diags(d_user)
 
         item_degree = np.array(sp_int.sum(axis=0))
         d_item_inv = np.power(item_degree, -self.alpha).flatten()
         d_item_inv[np.isinf(d_item_inv)] = 0.0
         d_item_inv_diag = sps.diags(d_item_inv)
 
-        d_item = np.power(item_degree, self.alpha).flatten()
-        d_item[np.isinf(d_item)] = 0.0
-        d_item_diag = sps.diags(d_item)
+        # d_item = np.power(item_degree, self.alpha).flatten()
+        # d_item[np.isinf(d_item)] = 0.0
+        # d_item_diag = sps.diags(d_item)
 
-        int_norm = d_user_inv_diag.dot(sp_int).dot(d_item_inv_diag)
+        # int_norm = d_user_inv_diag.dot(sp_int).dot(d_item_inv_diag)
+        # int_norm = sp_int.dot(d_item_inv_diag)
+        int_norm = sp_int
         gram_matrix = int_norm.T @ int_norm
 
         # compute eigendecomposition of the gram matrix
         print("Computing eigendecomposition can take time...")
         eigenvalues, eigenvectors = eigsh(gram_matrix, k=self.k, which="LA")
         print("Done!")
-        eigen_norm = d_item_diag @ eigenvectors
-        sim = (eigen_norm * eigenvalues**2) @ eigen_norm.T
+        # eigen_norm = d_item_diag @ eigenvectors
+        sim = eigenvectors @ eigenvectors.T
         # sim = eigen_norm @ eigen_norm.T
         self.similarity_matrix = sim

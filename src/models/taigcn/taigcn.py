@@ -2,6 +2,7 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
+import scipy.sparse as sps
 import similaripy
 import torch
 import torch.nn as nn
@@ -101,7 +102,7 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         self.item_embeddings = torch.nn.Parameter(
             torch.empty(
                 self.dataset._ITEMS_NUM,
-                128,
+                256,
             ),
             requires_grad=True,
         )
@@ -113,18 +114,34 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         """Compute the propagation matrix for the item-item graph"""
         print("Computing propagation matrix")
         train_sessions = self.dataset.get_train_sessions()
+
+        split_dict = self.dataset.get_split()
+        train, train_label = split_dict[TRAIN]
+        full_train = pd.concat([train_sessions, train_label], axis=0)
+
+        # full_train = train_sessions
+
         sparse_interaction, _, _ = interactions_to_sparse_matrix(
-            train_sessions,
+            full_train,
             items_num=self.dataset._ITEMS_NUM,
             users_num=None,
         )
-        similarity = cosine_similarity(sparse_interaction.T, dense_output=False)
-        # similarity = similaripy.cosine(sparse_interaction.T, k=100, format_output="csr")
+        # similarity = cosine_similarity(sparse_interaction.T, dense_output=False)
+        similarity = similaripy.cosine(sparse_interaction.T, k=20, format_output="csr")
 
         if self.normalize_propagation:
             similarity = similaripy.normalization.normalize(
                 similarity, norm="l1", axis=0
             )
+
+        # set similarity to 1
+        # similarity.data = np.ones(len(similarity.data))
+
+        degree = np.array(similarity.sum(axis=0)).squeeze()
+        D = sps.diags(degree, format="csr")
+        # D = D.power(-1 / 2)
+        D = D.power(-1 / 2)
+        similarity = D * similarity * D
 
         crow_indices = similarity.indptr  # type: ignore
         col_indices = similarity.indices  # type: ignore
@@ -153,19 +170,25 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         return nn.ModuleDict(weights)
 
     def forward(self, batch):
-        item_embeddings = self.item_embeddings
+        # item_embeddings = self.item_embeddings
         item_features = self.item_features
 
+        # final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
         # apply FFNN on features
         for i, _ in enumerate(self.features_layer):
             linear_layer = self.weight_matrices[f"W_{i}"]
             if i == len(self.features_layer) - 1:
                 item_features = linear_layer(item_features)
+                item_features = self.S.matmul(item_features)  # type: ignore
             else:
                 item_features = self.activation(linear_layer(item_features))
-        # concat item embeddings and item features and then perform convolution
-        final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
+                item_features = self.S.matmul(item_features)  # type: ignore
+                # item_features = linear_layer(item_features)
 
+        # concat item embeddings and item features and then perform convolution
+        # final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
+
+        final_embeddings = item_features
         # final_embeddings = item_embeddings
 
         for i in range(self.convolution_depth):

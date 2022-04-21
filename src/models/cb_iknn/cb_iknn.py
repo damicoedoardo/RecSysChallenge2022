@@ -42,7 +42,7 @@ class CBItemKNN(ItemSimilarityRecommender):
     def compute_similarity_matrix(self, interaction_df: pd.DataFrame) -> None:
         # load content matrix
         content_matrix = self.dataset.get_oh_item_features()
-        content_matrix = content_matrix.drop(columns=[ITEM_ID])
+        # content_matrix = content_matrix.drop(columns=[ITEM_ID])
 
         cols_to_drop = [c for c in content_matrix.columns if "cat" in c]
         content_matrix = content_matrix.drop(columns=cols_to_drop)

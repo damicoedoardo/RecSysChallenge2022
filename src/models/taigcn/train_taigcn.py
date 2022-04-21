@@ -3,6 +3,7 @@ import time
 from ast import arg
 
 import numpy as np
+import pandas as pd
 import torch
 import wandb
 from src.constant import *
@@ -60,15 +61,15 @@ if __name__ == "__main__":
 
     # model parameters
     parser.add_argument("--convolution_depth", type=int, default=2)
-    parser.add_argument("--features_layer", type=list, default=[128])
+    parser.add_argument("--features_layer", type=list, default=[1024, 512])
     parser.add_argument("--embedding_dimension", type=int, default=64)
     parser.add_argument("--features_num", type=int, default=968)
     parser.add_argument("--normalize_propagation", type=bool, default=False)
 
     # train parameters
     parser.add_argument("--epochs", type=int, default=1000)
-    parser.add_argument("--val_every", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=1024)
+    parser.add_argument("--val_every", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=4096)
     parser.add_argument("--l2_reg", type=float, default=0)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
 
@@ -88,7 +89,11 @@ if __name__ == "__main__":
     val, val_label = split_dict[VAL]
     test, test_label = split_dict[TEST]
 
+    # full_data = dataset.get_train_sessions()
     full_data = dataset.get_train_sessions()
+    full_label = dataset.get_train_purchases()
+
+    # full_data = pd.concat([full_data, full_label], axis=0)
 
     # put the model on the correct device
     device = torch.device(
@@ -113,12 +118,24 @@ if __name__ == "__main__":
     )
 
     # setting up the pytorch dataset
-    train_dataset = TripletsBPRDataset(train, dataset)
+    train_dataset = TripletsBPRDataset(train_label, full_data, dataset)
     rnd_sampler = RandomSampler(
         train_dataset, replacement=True, num_samples=len(train_dataset)
     )
     print("Number of training samples: {}".format(len(train_dataset)))
 
+    # filter on timescore
+    # full_data["last_buy"] = full_data.groupby(SESS_ID)[DATE].transform(max)
+    # full_data["first_buy"] = full_data.groupby(SESS_ID)[DATE].transform(min)
+    # full_data["time_score"] = 1 / (
+    #     (
+    #         (full_data["last_buy"] - full_data[DATE]).apply(
+    #             lambda x: x.total_seconds() / 3600
+    #         )
+    #     )
+    #     + 1
+    # )
+    # full_data = full_data[full_data["time_score"] >= 0.9]
     full_data_dict = full_data.groupby(SESS_ID)[ITEM_ID].apply(list)
 
     def collate_fn(data):

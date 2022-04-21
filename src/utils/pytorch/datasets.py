@@ -14,21 +14,41 @@ from tqdm import tqdm
 class TripletsBPRDataset(TorchDataset):
     """Dataset to sample triplets for BPR optimization"""
 
-    def __init__(self, train_df: pd.DataFrame, dataset):
-        interaction_list = train_df[[SESS_ID, ITEM_ID]].values
+    def __init__(self, purchase_df: pd.DataFrame, train_df: pd.DataFrame, dataset):
 
-        # create interaction list [(0, 1000), ...]
-        self.interactions_list = interaction_list
         self.dataset = dataset
         self.item_list = np.arange(dataset._ITEMS_NUM)
+        self.purchase_df = purchase_df
+
+        # filter on timescore
+        train_df["last_buy"] = train_df.groupby(SESS_ID)[DATE].transform(max)
+        train_df["first_buy"] = train_df.groupby(SESS_ID)[DATE].transform(min)
+        train_df["time_score"] = 1 / (
+            (
+                (train_df["last_buy"] - train_df[DATE]).apply(
+                    lambda x: x.total_seconds() / 3600
+                )
+            )
+            + 1
+        )
+        train_df = train_df[train_df["time_score"] >= 0.7]
 
         # create lookup dictionary
         print("Creating user item dictionary lookup")
-        user, item = zip(*train_df[[SESS_ID, ITEM_ID]].values)
+        all_df = pd.concat([train_df, purchase_df], axis=0)
+        # create interaction list [(0, 1000), ...]
+
+        interaction_list = all_df[[SESS_ID, ITEM_ID]].values
+        # interaction_list = purchase_df[[SESS_ID, ITEM_ID]].values
+        self.interactions_list = interaction_list
+
+        user, item = zip(*all_df[[SESS_ID, ITEM_ID]].values)
+
         train_score_dict = defaultdict(lambda: {})
         for u, i in tqdm(zip(user, item)):
             if i not in train_score_dict[u]:
                 train_score_dict[u][i] = 1
+
         self.train_score_dict = train_score_dict
 
     def _get_random_key(self, list):

@@ -4,7 +4,10 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sps
 from src.recommender_interface import ItemSimilarityRecommender
-from src.utils.sparse_matrix import interactions_to_sparse_matrix
+from src.utils.sparse_matrix import (
+    interactions_to_sparse_matrix,
+    weighted_interactions_to_sparse_matrix,
+)
 
 
 class EASE(ItemSimilarityRecommender):
@@ -25,26 +28,38 @@ class EASE(ItemSimilarityRecommender):
         self.l2 = l2
 
     def compute_similarity_matrix(self, interaction_df: pd.DataFrame) -> None:
-        sparse_interaction, user_mapping_dict, _ = interactions_to_sparse_matrix(
+        (
+            sparse_interaction,
+            user_mapping_dict,
+            _,
+        ) = weighted_interactions_to_sparse_matrix(
             interaction_df,
             items_num=self.dataset._ITEMS_NUM,
             users_num=None,
         )
 
         # computing user mat
-        user_degree = np.array(sparse_interaction.sum(axis=1))
-        d_user_inv = np.power(user_degree, -0.5).flatten()
-        d_user_inv[np.isinf(d_user_inv)] = 0.0
-        d_user_inv_diag = sps.diags(d_user_inv)
+        # user_degree = np.array(sparse_interaction.sum(axis=1)).squeeze()
+        # print(len(user_degree))
+        # d_user_inv = np.power(user_degree, -0.5).flatten()
+        # d_user_inv[np.isinf(d_user_inv)] = 0.0
+        # d_user_inv_diag = sps.diags(d_user_inv)
 
-        item_degree = np.array(sparse_interaction.sum(axis=0))
-        d_item_inv = np.power(item_degree, -0.5).flatten()
-        d_item_inv[np.isinf(d_item_inv)] = 0.0
-        d_item_inv_diag = sps.diags(d_item_inv)
+        # item_degree = np.array(sparse_interaction.sum(axis=0))
+        # item_degree = np.array(sparse_interaction.sum(axis=0)).squeeze()
+        # # print(len(item_degree))
+        # d_item_inv = np.power(item_degree, -0.5).flatten()
+        # d_item_inv[np.isinf(d_item_inv)] = 0.0
+        # d_item_inv_diag = sps.diags(d_item_inv)
 
-        sparse_interaction = d_user_inv_diag.dot(sparse_interaction).dot(
-            d_item_inv_diag
-        )
+        # # # d_item = np.power(item_degree, 0.5).flatten()
+        # # # d_item[np.isinf(d_item)] = 0.0
+        # # # d_item = sps.diags(d_item)
+
+        # sparse_interaction = sparse_interaction.dot(d_item_inv_diag)
+        # sparse_interaction = d_user_inv_diag.dot(sparse_interaction).dot(
+        #     d_item_inv_diag
+        # )
 
         # Compute gram matrix
         G = (sparse_interaction.T @ sparse_interaction).toarray()

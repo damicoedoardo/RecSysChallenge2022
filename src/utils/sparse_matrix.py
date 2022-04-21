@@ -117,6 +117,77 @@ def interactions_to_sparse_matrix(
     return user_item_matrix, user_ids_mapping_dict, item_ids_mapping_dict
 
 
+def weighted_interactions_to_sparse_matrix(
+    interactions: pd.DataFrame,
+    users_num: Union[int, None] = None,
+    items_num: Union[int, None] = None,
+    time_weight: float = None,
+) -> Tuple[sps.coo_matrix, Dict, Dict]:
+    """Convert interactions df into a sparse matrix
+
+    Args:
+        interactions (pd.DataFrame): interactions data
+        users_num (int): number of users, used to initialise the shape of the sparse matrix
+            if None user ids are remapped to consecutive
+        items_num (int): number of items, used to initialise the shape of the sparse matrix
+            if None item ids are remapped to consecutive
+
+    Returns:
+        user_item_matrix (sps.coo_matrix): users interactions in csr sparse format
+
+    """
+    for c in [SESS_ID, ITEM_ID]:
+        assert c in interactions.columns, f"column {c} not present in train_data"
+
+    row_num = users_num
+    col_num = items_num
+
+    user_ids_mapping_dict = {}
+    item_ids_mapping_dict = {}
+
+    if users_num is None:
+        interactions, user_ids_mapping_dict = remap_column_consecutive(
+            interactions, SESS_ID
+        )
+        logger.debug(
+            set_color("users_num is None, remap user ids to consecutive", "red")
+        )
+        row_num = len(user_ids_mapping_dict.keys())
+
+    if items_num is None:
+        interactions, item_ids_mapping_dict = remap_column_consecutive(
+            interactions, ITEM_ID
+        )
+        logger.debug(
+            set_color("items_num is None, remap item ids to consecutive", "red")
+        )
+        col_num = len(item_ids_mapping_dict.keys())
+
+    row_data = interactions[SESS_ID].values  # type: ignore
+    col_data = interactions[ITEM_ID].values  # type: ignore
+
+    if time_weight is not None:
+        print("Using Time Weight on Interaction matrix")
+        interactions["last_buy"] = interactions.groupby(SESS_ID)[DATE].transform(max)
+        interactions["first_buy"] = interactions.groupby(SESS_ID)[DATE].transform(min)
+        interactions["time_score"] = 1 / (
+            (
+                (interactions["last_buy"] - interactions[DATE]).apply(
+                    lambda x: x.total_seconds() / 3600
+                )
+            )
+            + 1
+        )
+        data = (interactions["time_score"].values) ** time_weight  # type: ignore
+    else:
+        data = interactions["sample_weight"].values  # type: ignore
+
+    user_item_matrix = sps.coo_matrix(
+        (data, (row_data, col_data)), shape=(row_num, col_num), dtype="float32"
+    )
+    return user_item_matrix, user_ids_mapping_dict, item_ids_mapping_dict
+
+
 def get_top_k(
     scores: ndarray, top_k: int, sort_top_k: bool = True
 ) -> Tuple[ndarray, ndarray]:
