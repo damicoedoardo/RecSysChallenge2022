@@ -14,6 +14,26 @@ from src.utils.pandas_utils import remap_column_consecutive
 from src.utils.sparse_matrix import interactions_to_sparse_matrix
 
 
+class SparseDropout(torch.nn.Module):
+    def __init__(self, dprob=0.2):
+        super(SparseDropout, self).__init__()
+        # dprob is ratio of dropout
+        # convert to keep probability
+        self.kprob = 1 - dprob
+
+    def forward(self, x, num_ids, num_items):
+        mask = ((torch.rand(x._values().size()) + (self.kprob)).floor()).type(
+            torch.bool
+        )
+        rc = x._indices()[:, mask]
+        val = x._values()[mask] * (1.0 / self.kprob)
+        return torch.sparse.FloatTensor(
+            rc,
+            val,
+            [num_ids, num_items],
+        )
+
+
 class WeightedSumSessEmbedding(nn.Module):
     """Compute user embeddings from item embeddings"""
 
@@ -24,6 +44,7 @@ class WeightedSumSessEmbedding(nn.Module):
         device: torch.device = torch.device("cpu"),
     ) -> None:
         nn.Module.__init__(self)
+        self.dropout = SparseDropout()
         self.dataset = dataset
         self.train_data = train_data
         self.train_data_dict = train_data.groupby(SESS_ID)[ITEM_ID].apply(list)
@@ -49,6 +70,7 @@ class WeightedSumSessEmbedding(nn.Module):
             data_tensor,
             [num_ids, self.dataset._ITEMS_NUM],
         )
+        user_batch = self.dropout(user_batch, num_ids, self.dataset._ITEMS_NUM)
         user_embeddings = user_batch.matmul(embeddings)
         return user_embeddings
 
@@ -102,7 +124,7 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         self.item_embeddings = torch.nn.Parameter(
             torch.empty(
                 self.dataset._ITEMS_NUM,
-                256,
+                1024,
             ),
             requires_grad=True,
         )
@@ -170,29 +192,29 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         return nn.ModuleDict(weights)
 
     def forward(self, batch):
-        # item_embeddings = self.item_embeddings
-        item_features = self.item_features
+        item_embeddings = self.item_embeddings
+        # item_features = self.item_features
 
         # final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
         # apply FFNN on features
-        for i, _ in enumerate(self.features_layer):
-            linear_layer = self.weight_matrices[f"W_{i}"]
-            if i == len(self.features_layer) - 1:
-                item_features = linear_layer(item_features)
-                item_features = self.S.matmul(item_features)  # type: ignore
-            else:
-                item_features = self.activation(linear_layer(item_features))
-                item_features = self.S.matmul(item_features)  # type: ignore
-                # item_features = linear_layer(item_features)
+        # for i, _ in enumerate(self.features_layer):
+        #     linear_layer = self.weight_matrices[f"W_{i}"]
+        #     if i == len(self.features_layer) - 1:
+        #         item_features = linear_layer(item_features)
+        #         item_features = self.S.matmul(item_features)  # type: ignore
+        #     else:
+        #         item_features = self.activation(linear_layer(item_features))
+        #         item_features = self.S.matmul(item_features)  # type: ignore
+        # item_features = linear_layer(item_features)
 
         # concat item embeddings and item features and then perform convolution
         # final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
 
-        final_embeddings = item_features
-        # final_embeddings = item_embeddings
+        # final_embeddings = item_features
+        final_embeddings = item_embeddings
 
-        for i in range(self.convolution_depth):
-            final_embeddings = self.S.matmul(final_embeddings)  # type: ignore
+        # for i in range(self.convolution_depth):
+        #     final_embeddings = self.S.matmul(final_embeddings)  # type: ignore
 
         s = (batch[0], batch[1], batch[2], batch[3])
         s_emb = self.sess_embedding_module(s, final_embeddings)

@@ -1,7 +1,7 @@
 import math
 import pickle
 from ast import Str
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import AnyStr, Dict, List, Tuple
 
@@ -117,36 +117,52 @@ class Dataset:
             )
             print(f"- {raw_df_name} saved!")
 
-    def split_data(self, splits_perc: list[float]) -> None:
-        """Split data into train val test userwise"""
-        assert (
-            len(splits_perc) == 3
-        ), "splits perc should have train_perc, val_perc, test_perc"
-        train_perc, val_perc, test_perc = splits_perc
+    def split_data(self) -> None:
+        """Split data into train val test userwise
+
+        We replicate the split done by the data owner:
+        we consider `train sessions` all the sessions where date <= max_train_date - 1month
+        we consider `val_test sessions` all the sessions where date > max_train_date - 1month
+
+        we then split in half the val_test session in validation and test
+        """
 
         train_sessions = self.get_train_sessions()
         train_purchases = self.get_train_purchases()
 
-        unique_sessions = train_sessions[SESS_ID].unique()
+        max_date = train_sessions[DATE].max()
+        train_limit_date = max_date - timedelta(days=31)  # type: ignore
+
+        local_train_sessions = train_sessions[train_sessions[DATE] <= train_limit_date]
+        local_val_test_sessions = train_sessions[
+            train_sessions[DATE] > train_limit_date
+        ]
+        print(
+            f"Number of val_test sessions: {local_val_test_sessions[SESS_ID].nunique()}"  # type: ignore
+        )
+
+        # split the val_test sessions in half to constitute local validation and test set
+        unique_val_test_sessions_ids = local_val_test_sessions[SESS_ID].unique()  # type: ignore
+
         # set the numpy random seed for reporducibility
         np.random.seed(RANDOM_SEED)
         # shuffle the sessions ids
-        np.random.shuffle(unique_sessions)
-        num_sessions = len(unique_sessions)
+        np.random.shuffle(unique_val_test_sessions_ids)
+        num_sessions = len(unique_val_test_sessions_ids)
 
-        train_len = math.ceil(num_sessions * train_perc)
-        val_len = math.ceil(num_sessions * val_perc)
-        test_len = math.ceil(num_sessions * test_perc)
+        val_len = math.ceil(num_sessions * 0.5)
 
-        train_sess_ids, val_sess_ids, test_sess_ids = (
-            unique_sessions[:train_len],
-            unique_sessions[train_len : (train_len + val_len)],
-            unique_sessions[(train_len + val_len) :],
+        val_sess_ids, test_sess_ids = (
+            unique_val_test_sessions_ids[:val_len],
+            unique_val_test_sessions_ids[val_len:],
         )
 
+        # train data should NOT be in val test sess ids
         train_data, train_label = (
-            train_sessions[train_sessions[SESS_ID].isin(train_sess_ids)],
-            train_purchases[train_purchases[SESS_ID].isin(train_sess_ids)],
+            train_sessions[~train_sessions[SESS_ID].isin(unique_val_test_sessions_ids)],
+            train_purchases[
+                ~train_purchases[SESS_ID].isin(unique_val_test_sessions_ids)
+            ],
         )
         val_data, val_label = (
             train_sessions[train_sessions[SESS_ID].isin(val_sess_ids)],
@@ -157,8 +173,8 @@ class Dataset:
             train_purchases[train_purchases[SESS_ID].isin(test_sess_ids)],
         )
 
-        assert len(train_data[SESS_ID].unique()) == len(
-            train_label[SESS_ID].unique()
+        assert len(train_data[SESS_ID].unique()) == len(  # type: ignore
+            train_label[SESS_ID].unique()  # type: ignore
         ), "train data and label have different number of sessions!"
         assert len(val_data[SESS_ID].unique()) == len(
             val_data[SESS_ID].unique()
@@ -167,7 +183,7 @@ class Dataset:
             test_data[SESS_ID].unique()
         ), "test data and label have different number of sessions!"
 
-        print(f"Train sessions: {len(train_data[SESS_ID].unique())}")
+        print(f"Train sessions: {len(train_data[SESS_ID].unique())}")  # type: ignore
         print(f"Val sessions: {len(val_data[SESS_ID].unique())}")
         print(f"Test sessions: {len(test_data[SESS_ID].unique())}")
 
@@ -320,5 +336,5 @@ class Dataset:
 if __name__ == "__main__":
     dataset = Dataset()
     # dataset.preprocess_data()
-    # dataset.split_data(splits_perc=[0.8, 0.1, 0.1])
-    dataset.preprocess_item_features_oh()
+    dataset.split_data()
+    # dataset.preprocess_item_features_oh()

@@ -21,25 +21,25 @@ class TripletsBPRDataset(TorchDataset):
         self.purchase_df = purchase_df
 
         # filter on timescore
-        train_df["last_buy"] = train_df.groupby(SESS_ID)[DATE].transform(max)
-        train_df["first_buy"] = train_df.groupby(SESS_ID)[DATE].transform(min)
-        train_df["time_score"] = 1 / (
-            (
-                (train_df["last_buy"] - train_df[DATE]).apply(
-                    lambda x: x.total_seconds() / 3600
-                )
-            )
-            + 1
-        )
-        train_df = train_df[train_df["time_score"] >= 0.7]
+        # train_df["last_buy"] = train_df.groupby(SESS_ID)[DATE].transform(max)
+        # train_df["first_buy"] = train_df.groupby(SESS_ID)[DATE].transform(min)
+        # train_df["time_score"] = 1 / (
+        #     (
+        #         (train_df["last_buy"] - train_df[DATE]).apply(
+        #             lambda x: x.total_seconds() / 3600
+        #         )
+        #     )
+        #     + 1
+        # )
+        # train_df = train_df[train_df["time_score"] >= 0.7]
 
         # create lookup dictionary
         print("Creating user item dictionary lookup")
         all_df = pd.concat([train_df, purchase_df], axis=0)
         # create interaction list [(0, 1000), ...]
 
-        interaction_list = all_df[[SESS_ID, ITEM_ID]].values
-        # interaction_list = purchase_df[[SESS_ID, ITEM_ID]].values
+        # interaction_list = all_df[[SESS_ID, ITEM_ID]].values
+        interaction_list = purchase_df[[SESS_ID, ITEM_ID]].values
         self.interactions_list = interaction_list
 
         user, item = zip(*all_df[[SESS_ID, ITEM_ID]].values)
