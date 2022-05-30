@@ -12,10 +12,11 @@ from src.constant import *
 from src.recommender_interface import RepresentationBasedRecommender
 from src.utils.pandas_utils import remap_column_consecutive
 from src.utils.sparse_matrix import interactions_to_sparse_matrix
+from utils.pytorch.losses import CosineContrastiveLoss
 
 
 class SparseDropout(torch.nn.Module):
-    def __init__(self, dprob=0.2):
+    def __init__(self, dprob=0.5):
         super(SparseDropout, self).__init__()
         # dprob is ratio of dropout
         # convert to keep probability
@@ -39,16 +40,11 @@ class WeightedSumSessEmbedding(nn.Module):
 
     def __init__(
         self,
-        train_data: pd.DataFrame,
         dataset,
-        device: torch.device = torch.device("cpu"),
     ) -> None:
         nn.Module.__init__(self)
-        self.dropout = SparseDropout()
+        self.dropout = SparseDropout(dprob=0.3)
         self.dataset = dataset
-        self.train_data = train_data
-        self.train_data_dict = train_data.groupby(SESS_ID)[ITEM_ID].apply(list)
-        self.device = device
 
     def forward(self, user_batch, embeddings):
 
@@ -70,8 +66,11 @@ class WeightedSumSessEmbedding(nn.Module):
             data_tensor,
             [num_ids, self.dataset._ITEMS_NUM],
         )
-        user_batch = self.dropout(user_batch, num_ids, self.dataset._ITEMS_NUM)
-        user_embeddings = user_batch.matmul(embeddings)
+        # if self.training:
+        #     user_batch = self.dropout(user_batch, num_ids, self.dataset._ITEMS_NUM)
+        # user_embeddings = user_batch.matmul(embeddings)
+        user_embeddings = torch.sparse.mm(user_batch, embeddings)
+        # user_embeddings = F.normalize(user_embeddings)
         return user_embeddings
 
 
@@ -87,7 +86,8 @@ class NoName(nn.Module, RepresentationBasedRecommender):
         dataset,
         sess_embedding_module: nn.Module,
         features_layer: list[int],
-        normalize_propagation: bool = False,
+        embedding_dimension: int,
+        loss_function: nn.Module,
         device: torch.device = torch.device("cpu"),
     ) -> None:
         # call init classes im extending
@@ -97,15 +97,15 @@ class NoName(nn.Module, RepresentationBasedRecommender):
         )
         nn.Module.__init__(self)
 
+        self.embedding_dimension = embedding_dimension
         self.features_layer = features_layer
         self.sess_embedding_module = sess_embedding_module
         self.device = device
         self.dataset = dataset
-        self.normalize_propagation = normalize_propagation
         self.full_data_dict = (
             dataset.get_train_sessions().groupby(SESS_ID)[ITEM_ID].apply(list)
         )
-        # self.user_embedding_module = user_embedding_module
+        self.loss_function = loss_function
 
         # set activation function for item features
         self.activation = torch.nn.LeakyReLU()
@@ -118,15 +118,54 @@ class NoName(nn.Module, RepresentationBasedRecommender):
         self.features_num = feature_tensor.shape[1]
         print(f"Num features available: {self.features_num}")
 
+        # propagation_m = self._compute_propagation_matrix()
+        # self.register_buffer("S", propagation_m)
+
         # one-hot embeddings for items
-        self.item_embeddings = torch.nn.Embedding(
-            num_embeddings=self.dataset._ITEMS_NUM,
-            embedding_dim=1024,
+        self.item_embeddings = torch.nn.Parameter(
+            torch.empty(
+                self.dataset._ITEMS_NUM,
+                self.embedding_dimension,
+            ),
+            requires_grad=True,
         )
-        # Xavier initialisation of item embeddings
-        nn.init.xavier_normal_(self.item_embeddings.weight)
+        # nn.init.xavier_normal_(self.item_embeddings)
+        nn.init.normal_(self.item_embeddings, std=1e-4)
+
+        # self.alphas_weight = torch.nn.Parameter()
 
         self.weight_matrices = self._create_weights_matrices()
+
+    def _compute_propagation_matrix(self) -> torch.Tensor:
+        print("Computing propagation matrix")
+        train_sessions = self.dataset.get_train_sessions()
+        sp_int, _, _ = interactions_to_sparse_matrix(
+            train_sessions,
+            items_num=self.dataset._ITEMS_NUM,
+            users_num=None,
+        )
+        user_degree = np.array(sp_int.sum(axis=1))
+        d_user_inv = np.power(user_degree, -0.5).flatten()
+        d_user_inv[np.isinf(d_user_inv)] = 0.0
+        d_user_inv_diag = sps.diags(d_user_inv)
+
+        item_degree = np.array(sp_int.sum(axis=0))
+        d_item_inv = np.power(item_degree, -0.5).flatten()
+        d_item_inv[np.isinf(d_item_inv)] = 0.0
+        d_item_inv_diag = sps.diags(d_item_inv)
+
+        int_norm = d_user_inv_diag.dot(sp_int).dot(d_item_inv_diag)
+        L = int_norm.T @ int_norm
+
+        crow_indices = L.indptr  # type: ignore
+        col_indices = L.indices  # type: ignore
+        values = L.data
+
+        # use torch sparse csr tensor to store propagation matrix
+        propagation_m = torch.sparse_csr_tensor(
+            crow_indices, col_indices, values, dtype=torch.float32  # type: ignore
+        ).to_sparse_coo()
+        return propagation_m
 
     def _create_weights_matrices(self) -> nn.ModuleDict:
         """Create linear transformation layers for oh features"""
@@ -145,33 +184,30 @@ class NoName(nn.Module, RepresentationBasedRecommender):
     def forward(self, batch):
         # todo: check how guys of SimpleX do sampler part!
         item_embeddings = self.item_embeddings
-        # item_features = self.item_features
+        item_features = self.item_features
 
-        # final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
         # apply FFNN on features
-        # for i, _ in enumerate(self.features_layer):
-        #     linear_layer = self.weight_matrices[f"W_{i}"]
-        #     if i == len(self.features_layer) - 1:
-        #         item_features = linear_layer(item_features)
-        #         item_features = self.S.matmul(item_features)  # type: ignore
-        #     else:
-        #         item_features = self.activation(linear_layer(item_features))
-        #         item_features = self.S.matmul(item_features)  # type: ignore
-        # item_features = linear_layer(item_features)
+        for i, _ in enumerate(self.features_layer):
+            linear_layer = self.weight_matrices[f"W_{i}"]
+            if i == len(self.features_layer) - 1:
+                item_features = linear_layer(item_features)
+            else:
+                item_features = self.activation(linear_layer(item_features))
 
         # concat item embeddings and item features and then perform convolution
-        # final_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
-
-        # final_embeddings = item_features
-        final_embeddings = item_embeddings
-
-        # for i in range(self.convolution_depth):
-        #     final_embeddings = self.S.matmul(final_embeddings)  # type: ignore
+        final_item_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
+        # final_item_embeddings = torch.sparse.mm(self.S, item_embeddings)
+        # final_item_embeddings = item_features
 
         s = (batch[0], batch[1], batch[2], batch[3])
-        s_emb = self.sess_embedding_module(s, final_embeddings)
-        # s_emb = None
-        return s_emb, final_embeddings
+
+        # final_item_embeddings = F.normalize(final_item_embeddings)
+
+        s_emb = self.sess_embedding_module(s, final_item_embeddings)
+
+        # s_emb = F.normalize(s_emb)
+        # final_item_embeddings = F.normalize(final_item_embeddings)
+        return s_emb, final_item_embeddings
 
     def compute_representations(
         self, interactions: pd.DataFrame
@@ -215,6 +251,10 @@ class NoName(nn.Module, RepresentationBasedRecommender):
                 torch.tensor(len(unique_sess_ids)).to(self.device),
             ],
         )
+
+        # apply l2-norm
+        # sess_emb = F.normalize(sess_emb)
+        # item_emb = F.normalize(item_emb)
 
         sess_emb = sess_emb.detach().cpu().numpy()
         item_emb = item_emb.detach().cpu().numpy()

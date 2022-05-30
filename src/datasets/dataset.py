@@ -211,6 +211,17 @@ class Dataset:
 
         print("- Saved succesfully!")
 
+    def create_sess2items_list_dict(self) -> None:
+        """Create a dictionary lookup mapping sessid the list of item in the session"""
+        train_data = self.get_train_sessions()
+        lead_data = self.get_test_leaderboard_sessions()
+        test_data = self.get_test_final_sessions()
+        all_data = pd.concat([train_data, lead_data, test_data], axis=0)
+
+        sess2item_df = all_data.groupby(SESS_ID)[ITEM_ID].apply(list)
+        sess2item_df.to_pickle(self.get_preprocessed_data_path() / "sess2items.pkl")
+        print("- sess2item df saved!")
+
     def preprocess_item_features_oh(self) -> None:
         """Create and save one-hot features for the items"""
         item_features = self.get_item_features()
@@ -233,6 +244,11 @@ class Dataset:
         path = self.get_preprocessed_data_path() / Path("oh_item_features.feather")
         df = pd.read_feather(path)
         df = df.set_index(ITEM_ID)
+        return df
+
+    def get_sess2items(self) -> pd.DataFrame:
+        path = self.get_preprocessed_data_path() / Path("sess2items.pkl")
+        df = pd.read_pickle(path)
         return df
 
     def get_split(self) -> Dict[str, List[pd.DataFrame]]:
@@ -336,5 +352,8 @@ class Dataset:
 if __name__ == "__main__":
     dataset = Dataset()
     # dataset.preprocess_data()
-    dataset.split_data()
+    # dataset.split_data()
     # dataset.preprocess_item_features_oh()
+    # dataset.create_sess2items_list_dict()
+    df = dataset.get_sess2items()
+    print(df[3])

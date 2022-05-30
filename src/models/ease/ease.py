@@ -4,8 +4,10 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sps
 from src.recommender_interface import ItemSimilarityRecommender
-from src.utils.sparse_matrix import (interactions_to_sparse_matrix,
-                                     weighted_interactions_to_sparse_matrix)
+from src.utils.sparse_matrix import (
+    interactions_to_sparse_matrix,
+    weighted_interactions_to_sparse_matrix,
+)
 
 
 class EASE(ItemSimilarityRecommender):
@@ -35,6 +37,13 @@ class EASE(ItemSimilarityRecommender):
             items_num=self.dataset._ITEMS_NUM,
             users_num=None,
         )
+
+        # user_degree = np.array(sparse_interaction.sum(axis=1))
+        # d_user_inv = np.power(user_degree, -1).flatten()
+        # d_user_inv[np.isinf(d_user_inv)] = 0.0
+        # d_user_inv_diag = sps.diags(d_user_inv)
+
+        # sparse_interaction = d_user_inv_diag.dot(sparse_interaction)
 
         # Compute gram matrix
         G = (sparse_interaction.T @ sparse_interaction).toarray()

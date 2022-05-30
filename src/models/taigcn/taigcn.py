@@ -70,8 +70,9 @@ class WeightedSumSessEmbedding(nn.Module):
             data_tensor,
             [num_ids, self.dataset._ITEMS_NUM],
         )
-        user_batch = self.dropout(user_batch, num_ids, self.dataset._ITEMS_NUM)
-        user_embeddings = user_batch.matmul(embeddings)
+        # user_batch = self.dropout(user_batch, num_ids, self.dataset._ITEMS_NUM)
+        # user_embeddings = user_batch.matmul(embeddings)
+        user_embeddings = torch.sparse.mm(user_batch, embeddings)
         return user_embeddings
 
 
@@ -133,48 +134,34 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
         self.weight_matrices = self._create_weights_matrices()
 
     def _compute_propagation_matrix(self) -> torch.Tensor:
-        """Compute the propagation matrix for the item-item graph"""
         print("Computing propagation matrix")
         train_sessions = self.dataset.get_train_sessions()
-
-        split_dict = self.dataset.get_split()
-        train, train_label = split_dict[TRAIN]
-        full_train = pd.concat([train_sessions, train_label], axis=0)
-
-        # full_train = train_sessions
-
-        sparse_interaction, _, _ = interactions_to_sparse_matrix(
-            full_train,
+        sp_int, _, _ = interactions_to_sparse_matrix(
+            train_sessions,
             items_num=self.dataset._ITEMS_NUM,
             users_num=None,
         )
-        # similarity = cosine_similarity(sparse_interaction.T, dense_output=False)
-        similarity = similaripy.cosine(sparse_interaction.T, k=20, format_output="csr")
+        user_degree = np.array(sp_int.sum(axis=1))
+        d_user_inv = np.power(user_degree, -0.5).flatten()
+        d_user_inv[np.isinf(d_user_inv)] = 0.0
+        d_user_inv_diag = sps.diags(d_user_inv)
 
-        if self.normalize_propagation:
-            similarity = similaripy.normalization.normalize(
-                similarity, norm="l1", axis=0
-            )
+        item_degree = np.array(sp_int.sum(axis=0))
+        d_item_inv = np.power(item_degree, -0.5).flatten()
+        d_item_inv[np.isinf(d_item_inv)] = 0.0
+        d_item_inv_diag = sps.diags(d_item_inv)
 
-        # set similarity to 1
-        # similarity.data = np.ones(len(similarity.data))
+        int_norm = d_user_inv_diag.dot(sp_int).dot(d_item_inv_diag)
+        L = int_norm.T @ int_norm
 
-        degree = np.array(similarity.sum(axis=0)).squeeze()
-        D = sps.diags(degree, format="csr")
-        # D = D.power(-1 / 2)
-        D = D.power(-1 / 2)
-        similarity = D * similarity * D
-
-        crow_indices = similarity.indptr  # type: ignore
-        col_indices = similarity.indices  # type: ignore
-        values = similarity.data
+        crow_indices = L.indptr  # type: ignore
+        col_indices = L.indices  # type: ignore
+        values = L.data
 
         # use torch sparse csr tensor to store propagation matrix
         propagation_m = torch.sparse_csr_tensor(
             crow_indices, col_indices, values, dtype=torch.float32  # type: ignore
         ).to_sparse_coo()
-
-        print("Computing propagation matrix")
         return propagation_m
 
     def _create_weights_matrices(self) -> nn.ModuleDict:
@@ -212,6 +199,7 @@ class TAIGCN(nn.Module, RepresentationBasedRecommender):
 
         # final_embeddings = item_features
         final_embeddings = item_embeddings
+        # final_embeddings = torch.sparse.mm(self.S, item_embeddings)
 
         # for i in range(self.convolution_depth):
         #     final_embeddings = self.S.matmul(final_embeddings)  # type: ignore
