@@ -187,17 +187,18 @@ class NoName(nn.Module, RepresentationBasedRecommender):
         item_features = self.item_features
 
         # apply FFNN on features
-        for i, _ in enumerate(self.features_layer):
-            linear_layer = self.weight_matrices[f"W_{i}"]
-            if i == len(self.features_layer) - 1:
-                item_features = linear_layer(item_features)
-            else:
-                item_features = self.activation(linear_layer(item_features))
+        # for i, _ in enumerate(self.features_layer):
+        #     linear_layer = self.weight_matrices[f"W_{i}"]
+        #     if i == len(self.features_layer) - 1:
+        #         item_features = linear_layer(item_features)
+        #     else:
+        #         item_features = self.activation(linear_layer(item_features))
 
         # concat item embeddings and item features and then perform convolution
-        final_item_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
+        # final_item_embeddings = torch.cat((item_embeddings, item_features), 1)  # type: ignore
         # final_item_embeddings = torch.sparse.mm(self.S, item_embeddings)
         # final_item_embeddings = item_features
+        final_item_embeddings = item_embeddings
 
         s = (batch[0], batch[1], batch[2], batch[3])
 

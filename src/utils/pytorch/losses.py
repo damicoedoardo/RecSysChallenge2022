@@ -63,13 +63,15 @@ class CosineContrastiveLoss(torch.nn.Module):
         """
         # compute positve part of loss function
         x_ui = torch.einsum("bf,bf->b", x_u, x_i)
-        #print(x_ui.mean())
+        # print(x_ui.mean())
 
         # the relu here should be not necessary...
         pos_loss = torch.relu(1 - x_ui)
+
+        # pos_loss = x_ui
         # compute negative part of the loss function
         x_uj = torch.einsum("bf,bnf->bn", x_u, x_j)
-        #print(x_ui.mean(dim=-1))
+        # print(x_ui.mean(dim=-1))
         # print(x_uj - self._margin)
         # check this scores....
         neg_loss = torch.relu(x_uj - self._margin)
@@ -84,4 +86,5 @@ class CosineContrastiveLoss(torch.nn.Module):
         loss = (
             1 - self._negative_weight
         ) * pos_loss + self._negative_weight * neg_loss_sample_mean
+        # loss = pos_loss + neg_loss_sample_mean
         return loss.mean()

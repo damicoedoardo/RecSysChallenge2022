@@ -217,6 +217,7 @@ class Dataset:
         lead_data = self.get_test_leaderboard_sessions()
         test_data = self.get_test_final_sessions()
         all_data = pd.concat([train_data, lead_data, test_data], axis=0)
+        all_data = all_data.sort_values([SESS_ID, DATE])
 
         sess2item_df = all_data.groupby(SESS_ID)[ITEM_ID].apply(list)
         sess2item_df.to_pickle(self.get_preprocessed_data_path() / "sess2items.pkl")
@@ -354,6 +355,6 @@ if __name__ == "__main__":
     # dataset.preprocess_data()
     # dataset.split_data()
     # dataset.preprocess_item_features_oh()
-    # dataset.create_sess2items_list_dict()
+    dataset.create_sess2items_list_dict()
     df = dataset.get_sess2items()
-    print(df[3])
+    print(df[4440001])
