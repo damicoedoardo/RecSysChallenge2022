@@ -67,6 +67,7 @@ class CosineContrastiveLoss(torch.nn.Module):
 
         # the relu here should be not necessary...
         pos_loss = torch.relu(1 - x_ui)
+        # pos_loss = torch.relu(-x_ui)
 
         # pos_loss = x_ui
         # compute negative part of the loss function

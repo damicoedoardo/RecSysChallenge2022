@@ -154,7 +154,6 @@ class ContextAwarePaddedDataset(TorchDataset):
         self.item_list = np.arange(dataset._ITEMS_NUM)
         self.train_score_dict = self._create_sess2items_lookup()
         self.padded_sess = self._pad_sessions()
-        a = 5
 
     def _create_sess2items_lookup(self):
         # sess2items dictionary lookup, data structure exploitex for negative sampling
@@ -172,7 +171,7 @@ class ContextAwarePaddedDataset(TorchDataset):
         print("Padding sessions")
         sess2items = self.sess2items
         padded_sess2items = sess2items.apply(
-            lambda x: np.array(x[-self.k :], dtype=np.float32)
+            lambda x: np.array(x[-self.k :])
             if len(x) >= self.k
             else np.pad(x, (self.k - len(x), 0), constant_values=self.padding_idx)
         )
@@ -209,12 +208,6 @@ class ContextAwarePaddedDataset(TorchDataset):
                 j = self._get_random_key(self.item_list)
             negative_samples_list.append(j)
         negative_samples = np.array(negative_samples_list)
-
-        # return (
-        #     torch.LongTensor(sess2items),
-        #     torch.LongTensor(purchase),
-        #     torch.LongTensor(negative_samples),
-        # )
         return sess2items, purchase, negative_samples
 
 
@@ -245,4 +238,3 @@ if __name__ == "__main__":
 
     for b in tqdm(train_dataloader):
         print(b)
-        break

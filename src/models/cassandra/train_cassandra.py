@@ -37,9 +37,9 @@ def train_routine(batch):
 
     # x_j = torch.mean(x_j, dim=1)
     # loss = bpr_loss(x_u, x_i, x_j)
-    # x_u = F.normalize(x_u, dim=-1)
-    # x_i = F.normalize(x_i, dim=-1)
-    # x_j = F.normalize(x_j, dim=-1)
+    x_u = F.normalize(x_u, dim=-1)
+    x_i = F.normalize(x_i, dim=-1)
+    x_j = F.normalize(x_j, dim=-1)
 
     loss = model.loss_function(x_u, x_i, x_j)
     # loss = model(batch)

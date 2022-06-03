@@ -7,7 +7,8 @@ import similaripy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.cassandra.session_embedding_modules import MeanAggregatorSessionEmbedding
+from models.cassandra.session_embedding_modules import \
+    MeanAggregatorSessionEmbedding
 from sklearn.metrics.pairwise import cosine_similarity
 from src.constant import *
 from src.recommender_interface import RepresentationBasedRecommender
@@ -167,9 +168,9 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         # sess_embeddings, item_embeddings = model()
         item_embeddings = self.item_embeddings.weight[:-1, :]
 
-        # sess_embeddings = F.normalize(sess_embeddings)
-        # item_embeddings = F.normalize(item_embeddings)
-
+        sess_embeddings = F.normalize(sess_embeddings)
+        item_embeddings = F.normalize(item_embeddings)
+        
         sess_embeddings = sess_embeddings.detach().cpu().numpy()
         item_embeddings = item_embeddings.detach().cpu().numpy()
 
