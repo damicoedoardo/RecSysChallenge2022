@@ -7,8 +7,10 @@ import similaripy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.cassandra.session_embedding_modules import \
-    MeanAggregatorSessionEmbedding
+from models.cassandra.session_embedding_modules import (
+    GRUSessionEmbedding,
+    MeanAggregatorSessionEmbedding,
+)
 from sklearn.metrics.pairwise import cosine_similarity
 from src.constant import *
 from src.recommender_interface import RepresentationBasedRecommender
@@ -85,6 +87,9 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
     ) -> nn.Module:
         if session_embedding_kind == "mean":
             session_embedding_module = MeanAggregatorSessionEmbedding()
+            return session_embedding_module
+        elif session_embedding_kind == "gru":
+            session_embedding_module = GRUSessionEmbedding()
             return session_embedding_module
         else:
             raise NotImplementedError(
@@ -170,7 +175,7 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
 
         sess_embeddings = F.normalize(sess_embeddings)
         item_embeddings = F.normalize(item_embeddings)
-        
+
         sess_embeddings = sess_embeddings.detach().cpu().numpy()
         item_embeddings = item_embeddings.detach().cpu().numpy()
 

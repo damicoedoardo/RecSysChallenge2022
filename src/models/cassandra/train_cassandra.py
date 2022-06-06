@@ -67,23 +67,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("train NoName")
 
     # model parameters
-    parser.add_argument("--session_embedding_kind", type=str, default="mean")
+    parser.add_argument("--session_embedding_kind", type=str, default="gru")
     parser.add_argument("--features_layer", type=list, default=[968, 256])
-    parser.add_argument("--embedding_dimension", type=int, default=512)
+    parser.add_argument("--embedding_dimension", type=int, default=256)
     parser.add_argument("--features_num", type=int, default=968)
     parser.add_argument("--k", type=int, default=10)
 
     # train parameters
     parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--val_every", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--l2_reg", type=float, default=0)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
 
     # loss function parameter
-    parser.add_argument("--margin", type=float, default=0.7)
+    parser.add_argument("--margin", type=float, default=0.3)
     parser.add_argument("--negative_weight", type=int, default=0.5)
-    parser.add_argument("--negative_samples_num", type=int, default=500)
+    parser.add_argument("--negative_samples_num", type=int, default=800)
 
     # GPU config
     parser.add_argument("--gpu", type=bool, default=True)
