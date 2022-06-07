@@ -29,6 +29,9 @@ class Dataset:
     def get_preprocessed_data_path(self) -> Path:
         return Path(self.dr.get_data_path() / "preprocessed")
 
+    def get_saved_models_path(self) -> Path:
+        return Path(self.dr.get_data_path() / "saved_models")
+
     def get_submission_folder(self) -> Path:
         return self._SUBMISSION_FOLDER
 
@@ -54,6 +57,7 @@ class Dataset:
         self.get_preprocessed_data_path().mkdir(parents=True, exist_ok=True)
         self.get_submission_folder().mkdir(parents=True, exist_ok=True)
         self.get_mapping_dict_folder().mkdir(parents=True, exist_ok=True)
+        self.get_saved_models_path().mkdir(parents=True, exist_ok=True)
 
     ##########################################
     ####### PREPROCESS DATA METHODS #########
@@ -355,6 +359,6 @@ if __name__ == "__main__":
     # dataset.preprocess_data()
     # dataset.split_data()
     # dataset.preprocess_item_features_oh()
-    dataset.create_sess2items_list_dict()
-    df = dataset.get_sess2items()
-    print(df[4440001])
+    # dataset.create_sess2items_list_dict()
+    # df = dataset.get_sess2items()
+    # print(df[4440001])

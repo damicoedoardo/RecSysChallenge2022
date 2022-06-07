@@ -26,7 +26,7 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
     def __init__(
         self,
         dataset,
-        session_embedding_kind: str,
+        session_embedding_module: torch.nn.Module,
         features_layer: list[int],
         embedding_dimension: int,
         loss_function: nn.Module,
@@ -43,10 +43,7 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         self.embedding_dimension = embedding_dimension
         self.features_layer = features_layer
         self.train_dataset = train_dataset
-        self.session_embedding_kind = session_embedding_kind
-        self.session_embedding_module = self._initialize_session_embedding_module(
-            session_embedding_kind
-        )
+        self.session_embedding_module = session_embedding_module
 
         self.device = device
         self.dataset = dataset
@@ -82,19 +79,19 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
 
         # self.weight_matrices = self._create_weights_matrices()
 
-    def _initialize_session_embedding_module(
-        self, session_embedding_kind: str
-    ) -> nn.Module:
-        if session_embedding_kind == "mean":
-            session_embedding_module = MeanAggregatorSessionEmbedding()
-            return session_embedding_module
-        elif session_embedding_kind == "gru":
-            session_embedding_module = GRUSessionEmbedding()
-            return session_embedding_module
-        else:
-            raise NotImplementedError(
-                f"Aggregator {session_embedding_kind} not implemented!"
-            )
+    # def _initialize_session_embedding_module(
+    #     self, session_embedding_kind: str
+    # ) -> nn.Module:
+    #     if session_embedding_kind == "mean":
+    #         session_embedding_module = MeanAggregatorSessionEmbedding()
+    #         return session_embedding_module
+    #     elif session_embedding_kind == "gru":
+    #         session_embedding_module = GRUSessionEmbedding()
+    #         return session_embedding_module
+    #     else:
+    #         raise NotImplementedError(
+    #             f"Aggregator {session_embedding_kind} not implemented!"
+    #         )
 
     def _create_weights_matrices(self) -> nn.ModuleDict:
         """Create linear transformation layers for oh features"""

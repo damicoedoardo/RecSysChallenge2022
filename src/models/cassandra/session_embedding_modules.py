@@ -21,12 +21,12 @@ class MeanAggregatorSessionEmbedding(nn.Module):
 
 
 class GRUSessionEmbedding(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, input_size: int, hidden_size: int, num_layers: int) -> None:
         nn.Module.__init__(self)
         self.gru = nn.GRU(
-            input_size=256,
-            hidden_size=256,
-            num_layers=1,
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
             batch_first=True,
         )
 
