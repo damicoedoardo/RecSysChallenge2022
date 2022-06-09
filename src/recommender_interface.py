@@ -117,6 +117,9 @@ class AbstractRecommender(ABC):
         whitelist_items = None
         if leaderboard:
             whitelist_items = self.dataset.get_candidate_items().values.squeeze()
+        else:
+            # use local candidate items
+            whitelist_items = self.dataset.get_local_candidate_items().values.squeeze()
 
         logger.info(set_color(f"Recommending items MONOCORE", "cyan"))
 
@@ -383,7 +386,7 @@ class RepresentationBasedRecommender(AbstractRecommender, ABC):
 
         # compute the scores as dot product between users and items representations
         device = torch.device(
-            "cuda:{}".format(2) if (torch.cuda.is_available()) else "cpu"
+            "cuda:{}".format(3) if (torch.cuda.is_available()) else "cpu"
         )
 
         u_tensor = torch.tensor(users_repr_df.to_numpy()).to(device)

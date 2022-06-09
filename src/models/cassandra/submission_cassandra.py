@@ -1,6 +1,7 @@
 import argparse
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -27,46 +28,6 @@ from src.utils.pytorch.losses import CosineContrastiveLoss, bpr_loss
 from torch.utils import mkldnn as mkldnn_utils
 from torch.utils.data import DataLoader, RandomSampler
 from tqdm import tqdm
-
-
-# define the training procedure
-def train_routine(batch):
-    model.train()
-    optimizer.zero_grad()
-    # optimization forward only the embeddings of the batch
-    # compute embeddings
-    x_u, item_embeddings = model(batch)
-
-    _, purchase_items, negative_items = batch[0], batch[1], batch[2]
-    x_i, x_j = item_embeddings(purchase_items), item_embeddings(negative_items)
-
-    # x_j = torch.mean(x_j, dim=1)
-    # loss = bpr_loss(x_u, x_i, x_j)
-    x_u = F.normalize(x_u, dim=-1)
-    x_i = F.normalize(x_i, dim=-1)
-    x_j = F.normalize(x_j, dim=-1)
-
-    loss = model.loss_function(x_u, x_i, x_j)
-    # loss = model(batch)
-    loss.backward()
-    optimizer.step()
-    return loss
-
-
-@timing
-def validation_routine():
-    print("+++ Validation routine +++")
-    model.eval()
-    print("Computing representations...")
-    model.compute_representations(val)
-    print("Recommend...")
-    recs = model.recommend(
-        interactions=val, remove_seen=True, cutoff=100, leaderboard=True
-    )
-    print("Computing mrr...")
-    mrr = compute_mrr(recs, val_label)
-    return mrr
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("train NoName")
@@ -98,13 +59,10 @@ if __name__ == "__main__":
 
     # TRAIN for final prediction
     parser.add_argument("--train_valtest", type=bool, default=True)
-    parser.add_argument("--model_save_name", type=str, default="prova.pth")
+    parser.add_argument("--model_save_name", type=str, default="avid-rain-5390")
 
     # get variables
     args = vars(parser.parse_args())
-
-    # initialize wandb
-    wandb.init(config=args)
 
     print("Loading splits...")
     dataset = Dataset()
@@ -197,39 +155,15 @@ if __name__ == "__main__":
         train_dataset=train_dataset,
     )
 
+    load_name = Path(args["model_save_name"] + ".pth")
     model = model.to(device)
+    model.load_state_dict(torch.load(dataset.get_saved_models_path() / load_name))
+    print("Loaded model with name: {}".format(args["model_save_name"]))
+    lead_data = dataset.get_test_leaderboard_sessions()
+    final_data = dataset.get_test_final_sessions()
 
-    # initialize the optimizer
-    optimizer = torch.optim.Adam(
-        params=model.parameters(), lr=args["learning_rate"], weight_decay=args["l2_reg"]
+    recs = model.recommend(
+        interactions=lead_data, remove_seen=True, cutoff=100, leaderboard=True
     )
-
-    for epoch in range(1, args["epochs"]):
-        cum_loss = 0
-        t1 = time.time()
-        for batch in tqdm(train_dataloader):
-            # move the batch to the correct device
-            batch = [b.to(device) for b in batch]
-            loss = train_routine(batch)
-            cum_loss += loss
-
-        cum_loss /= len(train_dataloader)
-        log = "Epoch: {:03d}, Loss: {:.4f}, Time: {:.4f}s"
-        print(log.format(epoch, cum_loss, time.time() - t1))
-        wandb.log({"BPR loss": cum_loss}, step=epoch)
-
-        if (epoch % args["val_every"] == 0) and (args["val_every"] != -1):
-            with torch.no_grad():
-                mrr = validation_routine()
-                wandb.log({"mrr": mrr}, step=epoch)
-
-    if args["train_valtest"]:
-        torch.save(
-            model.state_dict(),
-            dataset.get_saved_models_path() / args["model_save_name"],
-        )
-        print(
-            "Trained model with name: {}, saved succesfully".format(
-                args["model_save_name"]
-            )
-        )
+    dataset.create_submission(recs, sub_name=args["model_save_name"].split(".pth")[0])
+    print("Submission created succesfully!")

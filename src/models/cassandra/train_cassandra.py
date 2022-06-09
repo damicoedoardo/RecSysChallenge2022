@@ -1,6 +1,7 @@
 import argparse
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -12,8 +13,10 @@ from src.datasets.dataset import Dataset
 from src.evaluation import compute_mrr
 from src.models.cassandra.cassandra import Cassandra
 from src.models.cassandra.session_embedding_modules import (
+    ContextAttention,
     GRUSessionEmbedding,
     MeanAggregatorSessionEmbedding,
+    SelfAttentionSessionEmbedding,
 )
 from src.models.noname.noname import NoName, WeightedSumSessEmbedding
 from src.utils.decorator import timing
@@ -61,7 +64,7 @@ def validation_routine():
     model.compute_representations(val)
     print("Recommend...")
     recs = model.recommend(
-        interactions=val, remove_seen=True, cutoff=100, leaderboard=True
+        interactions=val, remove_seen=True, cutoff=100, leaderboard=False
     )
     print("Computing mrr...")
     mrr = compute_mrr(recs, val_label)
@@ -72,18 +75,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("train NoName")
 
     # model parameters
-    parser.add_argument("--session_embedding_kind", type=str, default="gru")
+    parser.add_argument("--session_embedding_kind", type=str, default="context_attn")
     parser.add_argument("--features_layer", type=list, default=[968, 256])
     parser.add_argument("--embedding_dimension", type=int, default=256)
     parser.add_argument("--features_num", type=int, default=968)
-    parser.add_argument("--k", type=int, default=5)
+    parser.add_argument("--k", type=int, default=10)
 
     # train parameters
-    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--val_every", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--l2_reg", type=float, default=0)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--early_stopping_round", type=int, default=5)
 
     # loss function parameter
     parser.add_argument("--margin", type=float, default=0.3)
@@ -97,14 +101,16 @@ if __name__ == "__main__":
     parser.add_argument("--days_to_keep", type=int, default=150)
 
     # TRAIN for final prediction
-    parser.add_argument("--train_valtest", type=bool, default=True)
-    parser.add_argument("--model_save_name", type=str, default="prova.pth")
+    parser.add_argument("--train_valtest", type=bool, default=False)
 
     # get variables
     args = vars(parser.parse_args())
 
     # initialize wandb
     wandb.init(config=args)
+    # get the run name
+    run_name = wandb.run.name
+    print(f"Run name: {run_name}")
 
     print("Loading splits...")
     dataset = Dataset()
@@ -121,7 +127,7 @@ if __name__ == "__main__":
         )
     )
     max_date = train[DATE].max()
-    train_limit_date = max_date - timedelta(days=150)
+    train_limit_date = max_date - timedelta(days=args["days_to_keep"])
     filtered_train = train[train[DATE] > train_limit_date].copy()
     id_filtered_train = filtered_train[SESS_ID].unique()
     final_train_data = train[train[SESS_ID].isin(id_filtered_train)]
@@ -136,12 +142,14 @@ if __name__ == "__main__":
         final_train_label = pd.concat([final_train_label, val_label, test_label])
 
     # put the model on the correct device
-    device = torch.device(
-        "cuda:{}".format(pick_gpu_lowest_memory())
-        if (torch.cuda.is_available() and args["gpu"])
-        else "cpu"
-    )
-    # device = "cpu"
+    # device = torch.device(
+    #     "cuda:{}".format(pick_gpu_lowest_memory())
+    #     if (torch.cuda.is_available() and args["gpu"])
+    #     else "cpu"
+    # )
+
+    device = torch.device("cuda:3") if args["gpu"] else torch.device("cpu")
+
     print("Using device {}".format(device))
 
     # initialize loss function
@@ -179,7 +187,19 @@ if __name__ == "__main__":
         session_embedding_module = MeanAggregatorSessionEmbedding()
     elif args["session_embedding_kind"] == "gru":
         session_embedding_module = GRUSessionEmbedding(
-            input_size=256, hidden_size=256, num_layers=1
+            input_size=args["embedding_dimension"],
+            hidden_size=args["embedding_dimension"],
+            num_layers=1,
+        )
+    elif args["session_embedding_kind"] == "attn":
+        session_embedding_module = SelfAttentionSessionEmbedding(
+            input_size=args["embedding_dimension"], num_heads=1
+        )
+    elif args["session_embedding_kind"] == "context_attn":
+        session_embedding_module = ContextAttention(
+            input_size=args["embedding_dimension"],
+            hidden_size=args["embedding_dimension"],
+            num_layers=1,
         )
     else:
         raise NotImplementedError(
@@ -204,7 +224,12 @@ if __name__ == "__main__":
         params=model.parameters(), lr=args["learning_rate"], weight_decay=args["l2_reg"]
     )
 
+    best_mrr = 0
+    early_stopping_counter = 0
     for epoch in range(1, args["epochs"]):
+        if early_stopping_counter == args["early_stopping_round"]:
+            print("Early stopping ended training procedure!")
+            break
         cum_loss = 0
         t1 = time.time()
         for batch in tqdm(train_dataloader):
@@ -222,14 +247,16 @@ if __name__ == "__main__":
             with torch.no_grad():
                 mrr = validation_routine()
                 wandb.log({"mrr": mrr}, step=epoch)
+                if mrr > best_mrr:
+                    best_mrr = mrr
+                    early_stopping_counter = 0
+                else:
+                    early_stopping_counter += 1
 
+    save_path = Path(run_name + ".pth")
     if args["train_valtest"]:
         torch.save(
             model.state_dict(),
-            dataset.get_saved_models_path() / args["model_save_name"],
+            dataset.get_saved_models_path() / save_path,
         )
-        print(
-            "Trained model with name: {}, saved succesfully".format(
-                args["model_save_name"]
-            )
-        )
+        print("Trained model with name: {}, saved succesfully".format(run_name))

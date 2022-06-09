@@ -241,6 +241,19 @@ class Dataset:
         )
         print("- One Hot features Saved succesfully!")
 
+    def create_local_candidate_items(self):
+        """Create local candidate items, items which have been purchased in the last month data"""
+        split_dict = self.get_split()
+        val, val_label = split_dict[VAL]
+        test, test_label = split_dict[TEST]
+        local_candidates = pd.concat([val_label, test_label])[
+            [ITEM_ID]
+        ].drop_duplicates()
+        local_candidates.reset_index(drop=True).to_feather(
+            self.get_preprocessed_data_path() / "local_candidates_items.feather"  # type: ignore
+        )
+        print("- Local candidates items saved succefully succesfully!")
+
     ##########################################
     ##### GET PREPROCESSED DATA METHODS ######
     ##########################################
@@ -327,6 +340,13 @@ class Dataset:
         df = pd.read_feather(path)
         return df
 
+    def get_local_candidate_items(self) -> pd.DataFrame:
+        path = self.get_preprocessed_data_path() / Path(
+            "local_candidates_items.feather"
+        )
+        df = pd.read_feather(path)
+        return df
+
     ##########################################
     ########### Submission Handler ###########
     ##########################################
@@ -356,6 +376,7 @@ class Dataset:
 
 if __name__ == "__main__":
     dataset = Dataset()
+    print(dataset.get_candidate_items())
     # dataset.preprocess_data()
     # dataset.split_data()
     # dataset.preprocess_item_features_oh()
