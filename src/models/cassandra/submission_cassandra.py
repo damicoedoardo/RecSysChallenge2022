@@ -13,8 +13,11 @@ from src.datasets.dataset import Dataset
 from src.evaluation import compute_mrr
 from src.models.cassandra.cassandra import Cassandra
 from src.models.cassandra.session_embedding_modules import (
+    ContextAttention,
     GRUSessionEmbedding,
     MeanAggregatorSessionEmbedding,
+    NNFeaturesEmbeddingModule,
+    SelfAttentionSessionEmbedding,
 )
 from src.models.noname.noname import NoName, WeightedSumSessEmbedding
 from src.utils.decorator import timing
@@ -33,11 +36,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("train NoName")
 
     # model parameters
-    parser.add_argument("--session_embedding_kind", type=str, default="gru")
-    parser.add_argument("--features_layer", type=list, default=[968, 256])
-    parser.add_argument("--embedding_dimension", type=int, default=256)
-    parser.add_argument("--features_num", type=int, default=968)
-    parser.add_argument("--k", type=int, default=5)
+    parser.add_argument("--session_embedding_kind", type=str, default="context_attn")
+    parser.add_argument("--layers_size", type=list, default=[512, 128])
+    parser.add_argument("--embedding_dimension", type=int, default=128)
+    parser.add_argument("--features_num", type=int, default=963)
+    parser.add_argument("--k", type=int, default=10)
 
     # train parameters
     parser.add_argument("--epochs", type=int, default=2)
@@ -59,7 +62,7 @@ if __name__ == "__main__":
 
     # TRAIN for final prediction
     parser.add_argument("--train_valtest", type=bool, default=True)
-    parser.add_argument("--model_save_name", type=str, default="avid-rain-5390")
+    parser.add_argument("--model_save_name", type=str, default="gentle-firefly-5493")
 
     # get variables
     args = vars(parser.parse_args())
@@ -94,11 +97,12 @@ if __name__ == "__main__":
         final_train_label = pd.concat([final_train_label, val_label, test_label])
 
     # put the model on the correct device
-    device = torch.device(
-        "cuda:{}".format(pick_gpu_lowest_memory())
-        if (torch.cuda.is_available() and args["gpu"])
-        else "cpu"
-    )
+    # device = torch.device(
+    #     "cuda:{}".format(pick_gpu_lowest_memory())
+    #     if (torch.cuda.is_available() and args["gpu"])
+    #     else "cpu"
+    # )
+    device = torch.device("cuda:1") if args["gpu"] else torch.device("cpu")
     # device = "cpu"
     print("Using device {}".format(device))
 
@@ -131,13 +135,32 @@ if __name__ == "__main__":
         # collate_fn=collate_fn,
     )
 
+    # choose item features embedding module
+    item_features_embedding_module = NNFeaturesEmbeddingModule(
+        layers_size=args["layers_size"]
+    )
+
     # choose session embedding module
+    concat_item_dim = args["embedding_dimension"] + args["layers_size"][-1]
+    # concat_item_dim = args["embedding_dimension"]
     session_embedding_module = None
     if args["session_embedding_kind"] == "mean":
         session_embedding_module = MeanAggregatorSessionEmbedding()
     elif args["session_embedding_kind"] == "gru":
         session_embedding_module = GRUSessionEmbedding(
-            input_size=256, hidden_size=256, num_layers=1
+            input_size=concat_item_dim,
+            hidden_size=concat_item_dim,
+            num_layers=1,
+        )
+    elif args["session_embedding_kind"] == "attn":
+        session_embedding_module = SelfAttentionSessionEmbedding(
+            input_size=concat_item_dim, num_heads=1
+        )
+    elif args["session_embedding_kind"] == "context_attn":
+        session_embedding_module = ContextAttention(
+            input_size=concat_item_dim,
+            hidden_size=concat_item_dim,
+            num_layers=1,
         )
     else:
         raise NotImplementedError(
@@ -148,9 +171,9 @@ if __name__ == "__main__":
     model = Cassandra(
         dataset,
         loss_function=loss,
+        item_features_embedding_module=item_features_embedding_module,
         session_embedding_module=session_embedding_module,
         embedding_dimension=args["embedding_dimension"],
-        features_layer=args["features_layer"],
         device=device,
         train_dataset=train_dataset,
     )
@@ -159,6 +182,7 @@ if __name__ == "__main__":
     model = model.to(device)
     model.load_state_dict(torch.load(dataset.get_saved_models_path() / load_name))
     print("Loaded model with name: {}".format(args["model_save_name"]))
+    model.eval()
     lead_data = dataset.get_test_leaderboard_sessions()
     final_data = dataset.get_test_final_sessions()
 

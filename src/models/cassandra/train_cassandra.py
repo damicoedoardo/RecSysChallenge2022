@@ -16,6 +16,7 @@ from src.models.cassandra.session_embedding_modules import (
     ContextAttention,
     GRUSessionEmbedding,
     MeanAggregatorSessionEmbedding,
+    NNFeaturesEmbeddingModule,
     SelfAttentionSessionEmbedding,
 )
 from src.models.noname.noname import NoName, WeightedSumSessEmbedding
@@ -23,10 +24,15 @@ from src.utils.decorator import timing
 from src.utils.general import pick_gpu_lowest_memory
 from src.utils.pytorch.datasets import (
     CCLDataset,
+    ContextAwareContrastiveDataset,
     ContextAwarePaddedDataset,
     TripletsBPRDataset,
 )
-from src.utils.pytorch.losses import CosineContrastiveLoss, bpr_loss
+from src.utils.pytorch.losses import (
+    ContextAwareCosineContrastiveLoss,
+    CosineContrastiveLoss,
+    bpr_loss,
+)
 from torch.utils import mkldnn as mkldnn_utils
 from torch.utils.data import DataLoader, RandomSampler
 from tqdm import tqdm
@@ -40,11 +46,19 @@ def train_routine(batch):
     # compute embeddings
     x_u, item_embeddings = model(batch)
 
-    _, purchase_items, negative_items = batch[0], batch[1], batch[2]
-    x_i, x_j = item_embeddings(purchase_items), item_embeddings(negative_items)
+    _, purchase_items, negative_items = (
+        batch[0],
+        batch[1],
+        batch[2],
+    )
+    x_i, x_j = (
+        item_embeddings[purchase_items],
+        item_embeddings[negative_items],
+    )
 
     # x_j = torch.mean(x_j, dim=1)
     # loss = bpr_loss(x_u, x_i, x_j)
+
     x_u = F.normalize(x_u, dim=-1)
     x_i = F.normalize(x_i, dim=-1)
     x_j = F.normalize(x_j, dim=-1)
@@ -76,9 +90,9 @@ if __name__ == "__main__":
 
     # model parameters
     parser.add_argument("--session_embedding_kind", type=str, default="context_attn")
-    parser.add_argument("--features_layer", type=list, default=[968, 256])
-    parser.add_argument("--embedding_dimension", type=int, default=256)
-    parser.add_argument("--features_num", type=int, default=968)
+    parser.add_argument("--layers_size", type=list, default=[512, 128])
+    parser.add_argument("--embedding_dimension", type=int, default=128)
+    parser.add_argument("--features_num", type=int, default=963)
     parser.add_argument("--k", type=int, default=10)
 
     # train parameters
@@ -90,15 +104,17 @@ if __name__ == "__main__":
     parser.add_argument("--early_stopping_round", type=int, default=5)
 
     # loss function parameter
-    parser.add_argument("--margin", type=float, default=0.3)
+    parser.add_argument("--margin", type=float, default=0.7)
     parser.add_argument("--negative_weight", type=int, default=0.5)
     parser.add_argument("--negative_samples_num", type=int, default=1000)
+    parser.add_argument("--context_weight", type=int, default=0.1)
+    parser.add_argument("--context_samples_num", type=int, default=2)
 
     # GPU config
     parser.add_argument("--gpu", type=bool, default=True)
 
     # SEASONALITY DATA trimming
-    parser.add_argument("--days_to_keep", type=int, default=150)
+    parser.add_argument("--days_to_keep", type=int, default=1000)
 
     # TRAIN for final prediction
     parser.add_argument("--train_valtest", type=bool, default=False)
@@ -148,13 +164,14 @@ if __name__ == "__main__":
     #     else "cpu"
     # )
 
-    device = torch.device("cuda:3") if args["gpu"] else torch.device("cpu")
+    device = torch.device("cuda:1") if args["gpu"] else torch.device("cpu")
 
     print("Using device {}".format(device))
 
     # initialize loss function
     loss = CosineContrastiveLoss(
-        margin=args["margin"], negative_weight=args["negative_weight"]
+        margin=args["margin"],
+        negative_weight=args["negative_weight"],
     )
 
     # setting up the pytorch dataset
@@ -181,24 +198,31 @@ if __name__ == "__main__":
         # collate_fn=collate_fn,
     )
 
+    # choose item features embedding module
+    item_features_embedding_module = NNFeaturesEmbeddingModule(
+        layers_size=args["layers_size"]
+    )
+
     # choose session embedding module
+    concat_item_dim = args["embedding_dimension"] + args["layers_size"][-1]
+    # concat_item_dim = args["embedding_dimension"]
     session_embedding_module = None
     if args["session_embedding_kind"] == "mean":
         session_embedding_module = MeanAggregatorSessionEmbedding()
     elif args["session_embedding_kind"] == "gru":
         session_embedding_module = GRUSessionEmbedding(
-            input_size=args["embedding_dimension"],
-            hidden_size=args["embedding_dimension"],
+            input_size=concat_item_dim,
+            hidden_size=concat_item_dim,
             num_layers=1,
         )
     elif args["session_embedding_kind"] == "attn":
         session_embedding_module = SelfAttentionSessionEmbedding(
-            input_size=args["embedding_dimension"], num_heads=1
+            input_size=concat_item_dim, num_heads=1
         )
     elif args["session_embedding_kind"] == "context_attn":
         session_embedding_module = ContextAttention(
-            input_size=args["embedding_dimension"],
-            hidden_size=args["embedding_dimension"],
+            input_size=concat_item_dim,
+            hidden_size=concat_item_dim,
             num_layers=1,
         )
     else:
@@ -211,8 +235,8 @@ if __name__ == "__main__":
         dataset,
         loss_function=loss,
         session_embedding_module=session_embedding_module,
+        item_features_embedding_module=item_features_embedding_module,
         embedding_dimension=args["embedding_dimension"],
-        features_layer=args["features_layer"],
         device=device,
         train_dataset=train_dataset,
     )

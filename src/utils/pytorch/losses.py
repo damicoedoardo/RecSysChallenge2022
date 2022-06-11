@@ -89,3 +89,56 @@ class CosineContrastiveLoss(torch.nn.Module):
         ) * pos_loss + self._negative_weight * neg_loss_sample_mean
         # loss = pos_loss + neg_loss_sample_mean
         return loss.mean()
+
+
+class ContextAwareCosineContrastiveLoss(torch.nn.Module):
+    def __init__(
+        self,
+        margin: float = 0,
+        negative_weight: float = 0.5,
+        context_weight: float = 0.2,
+    ):
+        """Cosine contrastive loss
+        Args:
+            margin (int, optional): margin. Defaults to 0.
+            negative_weight (_type_, optional): negative weight. Defaults to None.
+        """
+        super(ContextAwareCosineContrastiveLoss, self).__init__()
+        self._margin = margin
+        self._negative_weight = negative_weight
+        self.context_weight = context_weight
+
+    def forward(
+        self, x_u: torch.Tensor, x_i: torch.Tensor, x_j: torch.Tensor, x_c: torch.Tensor
+    ):
+        # compute positve part of loss function
+        x_ui = torch.einsum("bf,bf->b", x_u, x_i)
+        # print(x_ui.mean())
+
+        # the relu here should be not necessary...
+        pos_loss = torch.relu(1 - x_ui)
+        # pos_loss = torch.relu(-x_ui)
+
+        x_uc = torch.einsum("bf,bnf->bn", x_u, x_c)
+        context_loss = torch.mean(torch.relu(1 - x_uc), dim=-1)
+
+        # pos_loss = x_ui
+        # compute negative part of the loss function
+        x_uj = torch.einsum("bf,bnf->bn", x_u, x_j)
+        # print(x_ui.mean(dim=-1))
+        # print(x_uj - self._margin)
+        # check this scores....
+        neg_loss = torch.relu(x_uj - self._margin)
+        # neg_loss_sample_mean = neg_loss.mean(dim=-1)
+
+        denominator = (neg_loss != 0).sum(dim=-1)
+        numerator = neg_loss.sum(dim=-1)
+        neg_loss_sample_mean = numerator / (denominator + 1e-12)
+
+        # print(pos_loss.mean())
+        # print(neg_loss.mean())
+        loss = (1 - self._negative_weight) * (
+            (1 - self.context_weight) * pos_loss + self.context_weight * context_loss
+        ) + self._negative_weight * neg_loss_sample_mean
+        # loss = pos_loss + neg_loss_sample_mean
+        return loss.mean()

@@ -2,6 +2,55 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# class SelfAttentionFeaturesEmbeddingModule(nn.Module):
+#     def __init__(self, features_dim=968) -> None:
+#         nn.Module.__init__(self)
+#         self.mha = nn.MultiheadAttention(
+#             embed_dim=input_size, num_heads=num_heads, batch_first=True
+#         )
+
+#     def forward(self, sess2items_features):
+#         # sess2items_tensor [batch_size, k, embedding_dimension]
+#         return sess2items_features
+
+
+class NNFeaturesEmbeddingModule(nn.Module):
+    def __init__(self, layers_size: list[int], features_num=963) -> None:
+        nn.Module.__init__(self)
+        self.layers_size = layers_size
+        self.features_num = features_num
+
+        self.activation = torch.nn.LeakyReLU()
+        # self.layer_norm = torch.nn.LayerNorm(self.features_num)
+
+        self.weight_matrices = self._create_weights_matrices()
+
+    def _create_weights_matrices(self) -> nn.ModuleDict:
+        """Create linear transformation layers for oh features"""
+        weights = dict()
+        for i, layer_size in enumerate(self.layers_size):
+            if i == 0:
+                weights["W_{}".format(i)] = nn.Linear(
+                    self.features_num, layer_size, bias=True
+                )
+            else:
+                weights["W_{}".format(i)] = nn.Linear(
+                    self.layers_size[i - 1], layer_size, bias=True
+                )
+        return nn.ModuleDict(weights)
+
+    def forward(self, sess2items_features):
+        # apply FFNN on features
+        # item_features = self.layer_norm(sess2items_features)
+        item_features = sess2items_features
+        for i, _ in enumerate(self.weight_matrices):
+            linear_layer = self.weight_matrices[f"W_{i}"]
+            if i == len(self.weight_matrices) - 1:
+                item_features = linear_layer(item_features)
+            else:
+                item_features = self.activation(linear_layer(item_features))
+        return item_features
+
 
 class MeanAggregatorSessionEmbedding(nn.Module):
     def __init__(self) -> None:

@@ -385,9 +385,10 @@ class RepresentationBasedRecommender(AbstractRecommender, ABC):
         items_repr_df.sort_index(inplace=True)
 
         # compute the scores as dot product between users and items representations
-        device = torch.device(
-            "cuda:{}".format(3) if (torch.cuda.is_available()) else "cpu"
-        )
+        # device = torch.device(
+        #     "cuda:{}".format(1) if (torch.cuda.is_available()) else "cpu"
+        # )
+        device = self.device
 
         u_tensor = torch.tensor(users_repr_df.to_numpy()).to(device)
         i_tensor = torch.tensor(items_repr_df.to_numpy()).to(device)

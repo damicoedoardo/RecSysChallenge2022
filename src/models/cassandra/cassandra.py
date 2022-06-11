@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, final
 
 import numpy as np
 import pandas as pd
@@ -27,9 +27,9 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         self,
         dataset,
         session_embedding_module: torch.nn.Module,
-        features_layer: list[int],
         embedding_dimension: int,
         loss_function: nn.Module,
+        item_features_embedding_module: nn.Module,
         train_dataset,
         device: torch.device = torch.device("cpu"),
     ) -> None:
@@ -41,9 +41,9 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         nn.Module.__init__(self)
 
         self.embedding_dimension = embedding_dimension
-        self.features_layer = features_layer
         self.train_dataset = train_dataset
         self.session_embedding_module = session_embedding_module
+        self.item_features_embedding_module = item_features_embedding_module
 
         self.device = device
         self.dataset = dataset
@@ -51,13 +51,15 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
             dataset.get_train_sessions().groupby(SESS_ID)[ITEM_ID].apply(list)
         )
         self.loss_function = loss_function
-
-        # set activation function for item features
-        self.activation = torch.nn.LeakyReLU()
+        self.dropout_item = torch.nn.Dropout(p=0.5)
 
         # initialise the item features buffer
         feature_tensor = torch.Tensor(dataset.get_oh_item_features().values)
-        self.register_buffer("item_features", feature_tensor)
+        # padding feature tensor
+        print("Padding feature tensor...")
+        padding_feature_tensor = torch.zeros(1, feature_tensor.shape[1])
+        padded_feature_tensor = torch.cat([feature_tensor, padding_feature_tensor])
+        self.register_buffer("item_features", padded_feature_tensor)
 
         # save the number of features available
         self.features_num = feature_tensor.shape[1]
@@ -75,45 +77,35 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         # nn.init.xavier_normal_(self.item_embeddings.weight)
         # nn.init.normal_(self.item_embeddings, std=1e-4)
 
+        self.linear = torch.nn.Linear(
+            self.embedding_dimension * 2, self.embedding_dimension * 2
+        )
+        # self.mha = torch.nn.MultiheadAttention(
+        #     embed_dim=self.embedding_dimension * 2, num_heads=1, batch_first=True
+        # )
+
         # self.alphas_weight = torch.nn.Parameter()
 
-        # self.weight_matrices = self._create_weights_matrices()
-
-    # def _initialize_session_embedding_module(
-    #     self, session_embedding_kind: str
-    # ) -> nn.Module:
-    #     if session_embedding_kind == "mean":
-    #         session_embedding_module = MeanAggregatorSessionEmbedding()
-    #         return session_embedding_module
-    #     elif session_embedding_kind == "gru":
-    #         session_embedding_module = GRUSessionEmbedding()
-    #         return session_embedding_module
-    #     else:
-    #         raise NotImplementedError(
-    #             f"Aggregator {session_embedding_kind} not implemented!"
-    #         )
-
-    def _create_weights_matrices(self) -> nn.ModuleDict:
-        """Create linear transformation layers for oh features"""
-        weights = dict()
-        for i, layer_size in enumerate(self.features_layer):
-            if i == 0:
-                weights["W_{}".format(i)] = nn.Linear(
-                    self.features_num, layer_size, bias=True
-                )
-            else:
-                weights["W_{}".format(i)] = nn.Linear(
-                    self.features_layer[i - 1], layer_size, bias=True
-                )
-        return nn.ModuleDict(weights)
+    # def _create_weights_matrices(self) -> nn.ModuleDict:
+    #     """Create linear transformation layers for oh features"""
+    #     weights = dict()
+    #     for i, layer_size in enumerate(self.features_layer):
+    #         if i == 0:
+    #             weights["W_{}".format(i)] = nn.Linear(
+    #                 self.features_num, layer_size, bias=True
+    #             )
+    #         else:
+    #             weights["W_{}".format(i)] = nn.Linear(
+    #                 self.features_layer[i - 1], layer_size, bias=True
+    #             )
+    #     return nn.ModuleDict(weights)
 
     def forward(self, batch):
-        # unpack batch
-        sess2items, _, _ = batch[0], batch[1], batch[2]
+        sess2items = batch[0]
 
         # todo: check how guys of SimpleX do sampler part!
         item_embeddings = self.item_embeddings
-        # item_features = self.item_features
+        item_features = self.item_features
 
         # apply FFNN on features
         # for i, _ in enumerate(self.features_layer):
@@ -131,9 +123,37 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         # s = (batch[0], batch[1], batch[2], batch[3])
 
         # final_item_embeddings = F.normalize(final_item_embeddings)
-        sess2items_tensor = item_embeddings(sess2items)
+
+        # sess2items_tensor -> [batch_size, seq_len, item_embedding_dimension]
+
+        # item_features_embedding -> [items_num+1, features_layer[-1]]
+        item_features_embedding = self.item_features_embedding_module(item_features)
+        all_items_embedding = torch.cat(
+            (item_embeddings.weight, item_features_embedding), -1
+        )
+        # all_items_embedding = self.linear(all_items_embedding)
+        # all_items_embedding = F.normalize(all_items_embedding, dim=-1)
+        # all_items_embedding = self.dropout_item(all_items_embedding)
+
+        # sess2items_tensor = item_embeddings(sess2items)
+        sess2items_tensor = all_items_embedding[sess2items]
+        # item_features_tensor = item_features_embedding[sess2items]
+        # concatenate the features embeddings and item embeddings
+        # final_item_embeddings -> [batch_size, seq_len, item_embedding_dimension + features_embedding_dim]
+        # final_item_embeddings = torch.cat((sess2items_tensor, item_features_tensor), -1)  # type: ignore
+        # final_item_embeddings = F.normalize(final_item_embeddings, dim=-1)
+        # final_item_embeddings = self.dropout_item(final_item_embeddings)
+        # final_item_embeddings = torch.mean((sess2items_tensor, item_features_tensor), -1)  # type: ignore
+
+        # final_item_embeddings, _ = self.mha(
+        #     final_item_embeddings, final_item_embeddings, final_item_embeddings
+        # )
+        # final_item_embeddings = self.linear(final_item_embeddings)
         session_embedding = self.session_embedding_module(sess2items_tensor)
 
+        # all_items_embedding = torch.cat(
+        #     (item_embeddings.weight, item_features_embedding), -1
+        # )
         # session_embedding = F.normalize(
         #     self.session_embedding_module(sess2items_tensor)
         # )
@@ -148,7 +168,7 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         # return session_embedding, purchase_embedding, negative_embeddings
         # session_embedding = F.normalize(session_embedding)
         # item_embeddings = F.normalize(item_embeddings)
-        return session_embedding, item_embeddings
+        return session_embedding, all_items_embedding
 
     def compute_sessions_embeddings(self, interactions: pd.DataFrame):
         unique_sess_ids = interactions[SESS_ID].unique()
@@ -166,9 +186,16 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
     def compute_representations(
         self, interactions: pd.DataFrame
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        sess_embeddings, sess_indices = self.compute_sessions_embeddings(interactions)
-        # sess_embeddings, item_embeddings = model()
-        item_embeddings = self.item_embeddings.weight[:-1, :]
+        # sess_embeddings, sess_indices = self.compute_sessions_embeddings(interactions)
+        # # sess_embeddings, item_embeddings = model()
+        # item_embeddings = self.item_embeddings.weight[:-1, :]
+
+        ##########
+        unique_sess_ids = interactions[SESS_ID].unique()
+        sess2items = torch.LongTensor(
+            np.stack(self.train_dataset.padded_sess.loc[unique_sess_ids].values)
+        ).to(self.device)
+        sess_embeddings, item_embeddings = self([sess2items])
 
         sess_embeddings = F.normalize(sess_embeddings)
         item_embeddings = F.normalize(item_embeddings)
@@ -176,7 +203,7 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         sess_embeddings = sess_embeddings.detach().cpu().numpy()
         item_embeddings = item_embeddings.detach().cpu().numpy()
 
-        users_repr_df = pd.DataFrame(sess_embeddings, index=sess_indices)
+        users_repr_df = pd.DataFrame(sess_embeddings, index=unique_sess_ids)
         items_repr_df = pd.DataFrame(item_embeddings)
 
         return users_repr_df, items_repr_df
