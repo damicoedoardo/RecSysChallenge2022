@@ -51,7 +51,7 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
             dataset.get_train_sessions().groupby(SESS_ID)[ITEM_ID].apply(list)
         )
         self.loss_function = loss_function
-        self.dropout_item = torch.nn.Dropout(p=0.5)
+        self.dropout_item = torch.nn.Dropout(p=0.3)
 
         # initialise the item features buffer
         feature_tensor = torch.Tensor(dataset.get_oh_item_features().values)
@@ -78,8 +78,9 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         # nn.init.normal_(self.item_embeddings, std=1e-4)
 
         self.linear = torch.nn.Linear(
-            self.embedding_dimension * 2, self.embedding_dimension * 2
+            self.embedding_dimension, self.embedding_dimension
         )
+        self.activation = torch.nn.LeakyReLU()
         # self.mha = torch.nn.MultiheadAttention(
         #     embed_dim=self.embedding_dimension * 2, num_heads=1, batch_first=True
         # )
@@ -128,10 +129,12 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
 
         # item_features_embedding -> [items_num+1, features_layer[-1]]
         item_features_embedding = self.item_features_embedding_module(item_features)
-        all_items_embedding = torch.cat(
-            (item_embeddings.weight, item_features_embedding), -1
-        )
-        # all_items_embedding = self.linear(all_items_embedding)
+        # all_items_embedding = torch.cat(
+        #     (item_embeddings.weight, item_features_embedding), -1
+        # )
+        all_items_embedding = item_embeddings.weight + item_features_embedding
+
+        # all_items_embedding = self.activation(self.linear(all_items_embedding))
         # all_items_embedding = F.normalize(all_items_embedding, dim=-1)
         # all_items_embedding = self.dropout_item(all_items_embedding)
 

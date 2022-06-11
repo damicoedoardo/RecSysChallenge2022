@@ -90,8 +90,8 @@ if __name__ == "__main__":
 
     # model parameters
     parser.add_argument("--session_embedding_kind", type=str, default="context_attn")
-    parser.add_argument("--layers_size", type=list, default=[512, 128])
-    parser.add_argument("--embedding_dimension", type=int, default=128)
+    parser.add_argument("--layers_size", type=list, default=[963, 256])
+    parser.add_argument("--embedding_dimension", type=int, default=256)
     parser.add_argument("--features_num", type=int, default=963)
     parser.add_argument("--k", type=int, default=10)
 
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     parser.add_argument("--early_stopping_round", type=int, default=5)
 
     # loss function parameter
-    parser.add_argument("--margin", type=float, default=0.7)
+    parser.add_argument("--margin", type=float, default=0.9)
     parser.add_argument("--negative_weight", type=int, default=0.5)
     parser.add_argument("--negative_samples_num", type=int, default=1000)
     parser.add_argument("--context_weight", type=int, default=0.1)
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=bool, default=True)
 
     # SEASONALITY DATA trimming
-    parser.add_argument("--days_to_keep", type=int, default=1000)
+    parser.add_argument("--days_to_keep", type=int, default=150)
 
     # TRAIN for final prediction
     parser.add_argument("--train_valtest", type=bool, default=False)
@@ -204,8 +204,8 @@ if __name__ == "__main__":
     )
 
     # choose session embedding module
-    concat_item_dim = args["embedding_dimension"] + args["layers_size"][-1]
-    # concat_item_dim = args["embedding_dimension"]
+    # concat_item_dim = args["embedding_dimension"] + args["layers_size"][-1]
+    concat_item_dim = args["embedding_dimension"]
     session_embedding_module = None
     if args["session_embedding_kind"] == "mean":
         session_embedding_module = MeanAggregatorSessionEmbedding()
