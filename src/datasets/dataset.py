@@ -38,6 +38,30 @@ class Dataset:
     def get_mapping_dict_folder(self) -> Path:
         return self.get_preprocessed_data_path() / "mapping_dict"
 
+    def get_recs_df_folder(self) -> Path:
+        return self.get_preprocessed_data_path() / "recs_df"
+
+    def get_train_recs_df_folder(self) -> Path:
+        return self.get_recs_df_folder() / "train"
+
+    def get_leaderboard_recs_df_folder(self) -> Path:
+        return self.get_recs_df_folder() / "leaderboard"
+
+    def get_final_recs_df_folder(self) -> Path:
+        return self.get_recs_df_folder() / "final"
+
+    def get_xgboost_dataset_folder(self) -> Path:
+        return self.get_preprocessed_data_path() / "xgboost_dataset"
+
+    def get_train_xgboost_dataset_folder(self) -> Path:
+        return self.get_xgboost_dataset_folder() / "train"
+
+    def get_leaderboard_xgboost_dataset_folder(self) -> Path:
+        return self.get_xgboost_dataset_folder() / "leaderboard"
+
+    def get_final_xgboost_dataset_folder(self) -> Path:
+        return self.get_xgboost_dataset_folder() / "final"
+
     def get_item_mapping_dicts(self) -> Tuple[Dict[int, int], Dict[int, int]]:
         """Return the item mapping dictionaries
 
@@ -58,6 +82,16 @@ class Dataset:
         self.get_submission_folder().mkdir(parents=True, exist_ok=True)
         self.get_mapping_dict_folder().mkdir(parents=True, exist_ok=True)
         self.get_saved_models_path().mkdir(parents=True, exist_ok=True)
+
+        self.get_recs_df_folder().mkdir(parents=True, exist_ok=True)
+        self.get_train_recs_df_folder().mkdir(parents=True, exist_ok=True)
+        self.get_leaderboard_recs_df_folder().mkdir(parents=True, exist_ok=True)
+        self.get_final_recs_df_folder().mkdir(parents=True, exist_ok=True)
+
+        self.get_xgboost_dataset_folder().mkdir(parents=True, exist_ok=True)
+        self.get_train_xgboost_dataset_folder().mkdir(parents=True, exist_ok=True)
+        self.get_leaderboard_xgboost_dataset_folder().mkdir(parents=True, exist_ok=True)
+        self.get_final_xgboost_dataset_folder().mkdir(parents=True, exist_ok=True)
 
     ##########################################
     ####### PREPROCESS DATA METHODS #########
@@ -254,9 +288,49 @@ class Dataset:
         )
         print("- Local candidates items saved succefully succesfully!")
 
+    def create_sess_features(self) -> None:
+        sess2items = self.get_sess2items()
+        temp = sess2items.explode().to_frame().reset_index()
+        features = self.get_oh_item_features()
+        joined = pd.merge(temp, features.reset_index(), on=ITEM_ID)
+        user_f = joined.groupby(SESS_ID).sum()
+        user_f = user_f.add_suffix("_sum")
+
+        sess_len = temp.groupby(SESS_ID).count()
+        sess_len = sess_len.rename(columns={ITEM_ID: "session_length"})
+
+        final_sess_features = user_f.join(sess_len).reset_index()
+
+        final_sess_features.reset_index(drop=True).to_feather(
+            self.get_preprocessed_data_path() / "sess_features.feather"  # type: ignore
+        )
+        print("- Session Features created succesfully!")
+
     ##########################################
     ##### GET PREPROCESSED DATA METHODS ######
     ##########################################
+
+    def get_recs_df(self, model_name: str, kind: str) -> pd.DataFrame:
+        base_path = None
+        if kind == "train":
+            base_path = self.get_train_recs_df_folder()
+        elif kind == "leaderboard":
+            base_path = self.get_leaderboard_recs_df_folder()
+        elif kind == "final":
+            base_path = self.get_final_recs_df_folder()
+        else:
+            raise NotImplementedError("Kind passed is wrong!")
+        m = model_name + ".feather"
+        recs = pd.read_feather(base_path / m)
+        recs = recs.rename(
+            columns={"score": f"{model_name}_score", "rank": f"{model_name}_rank"}
+        )
+        return recs
+
+    def get_sess_features(self) -> pd.DataFrame:
+        path = self.get_preprocessed_data_path() / Path("sess_features.feather")
+        df = pd.read_feather(path)
+        return df
 
     def get_oh_item_features(self) -> pd.DataFrame:
         path = self.get_preprocessed_data_path() / Path("oh_item_features.feather")
@@ -376,7 +450,8 @@ class Dataset:
 
 if __name__ == "__main__":
     dataset = Dataset()
-    print(dataset.get_candidate_items())
+    dataset.create_sess_features()
+    # print(dataset.get_candidate_items())
     # dataset.preprocess_data()
     # dataset.split_data()
     # dataset.preprocess_item_features_oh()

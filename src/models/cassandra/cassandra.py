@@ -77,6 +77,15 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
         # nn.init.xavier_normal_(self.item_embeddings.weight)
         # nn.init.normal_(self.item_embeddings, std=1e-4)
 
+        self.pos_embeddings = torch.nn.Parameter(
+            torch.empty(
+                10,
+                self.embedding_dimension,
+            ),
+            requires_grad=True,
+        )
+        nn.init.xavier_normal_(self.pos_embeddings)
+
         self.linear = torch.nn.Linear(
             self.embedding_dimension, self.embedding_dimension
         )
@@ -140,6 +149,8 @@ class Cassandra(nn.Module, RepresentationBasedRecommender):
 
         # sess2items_tensor = item_embeddings(sess2items)
         sess2items_tensor = all_items_embedding[sess2items]
+
+        # sess2items_tensor = sess2items_tensor + self.pos_embeddings
         # item_features_tensor = item_features_embedding[sess2items]
         # concatenate the features embeddings and item embeddings
         # final_item_embeddings -> [batch_size, seq_len, item_embedding_dimension + features_embedding_dim]

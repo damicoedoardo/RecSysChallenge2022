@@ -37,22 +37,25 @@ if __name__ == "__main__":
 
     # model parameters
     parser.add_argument("--session_embedding_kind", type=str, default="context_attn")
-    parser.add_argument("--layers_size", type=list, default=[512, 128])
-    parser.add_argument("--embedding_dimension", type=int, default=128)
+    parser.add_argument("--layers_size", type=list, default=[963, 256])
+    parser.add_argument("--embedding_dimension", type=int, default=256)
     parser.add_argument("--features_num", type=int, default=963)
     parser.add_argument("--k", type=int, default=10)
 
     # train parameters
-    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--epochs", type=int, default=6)
     parser.add_argument("--val_every", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--l2_reg", type=float, default=0)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--early_stopping_round", type=int, default=5)
 
     # loss function parameter
-    parser.add_argument("--margin", type=float, default=0.3)
+    parser.add_argument("--margin", type=float, default=0.8)
     parser.add_argument("--negative_weight", type=int, default=0.5)
     parser.add_argument("--negative_samples_num", type=int, default=1000)
+    parser.add_argument("--context_weight", type=int, default=0.1)
+    parser.add_argument("--context_samples_num", type=int, default=2)
 
     # GPU config
     parser.add_argument("--gpu", type=bool, default=True)
@@ -62,7 +65,8 @@ if __name__ == "__main__":
 
     # TRAIN for final prediction
     parser.add_argument("--train_valtest", type=bool, default=True)
-    parser.add_argument("--model_save_name", type=str, default="gentle-firefly-5493")
+
+    parser.add_argument("--model_save_name", type=str, default="vocal-morning-5671")
 
     # get variables
     args = vars(parser.parse_args())
@@ -82,7 +86,7 @@ if __name__ == "__main__":
         )
     )
     max_date = train[DATE].max()
-    train_limit_date = max_date - timedelta(days=150)
+    train_limit_date = max_date - timedelta(days=args["days_to_keep"])
     filtered_train = train[train[DATE] > train_limit_date].copy()
     id_filtered_train = filtered_train[SESS_ID].unique()
     final_train_data = train[train[SESS_ID].isin(id_filtered_train)]
@@ -141,8 +145,8 @@ if __name__ == "__main__":
     )
 
     # choose session embedding module
-    concat_item_dim = args["embedding_dimension"] + args["layers_size"][-1]
-    # concat_item_dim = args["embedding_dimension"]
+    # concat_item_dim = args["embedding_dimension"] + args["layers_size"][-1]
+    concat_item_dim = args["embedding_dimension"]
     session_embedding_module = None
     if args["session_embedding_kind"] == "mean":
         session_embedding_module = MeanAggregatorSessionEmbedding()

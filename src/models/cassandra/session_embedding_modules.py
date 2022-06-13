@@ -89,32 +89,26 @@ class SelfAttentionSessionEmbedding(nn.Module):
     def __init__(self, input_size: int, num_heads: int) -> None:
         nn.Module.__init__(self)
         self.activation = torch.nn.LeakyReLU()
-        self.qw = nn.Linear(input_size, input_size)
-        self.kw = nn.Linear(input_size, input_size)
-        self.vw = nn.Linear(input_size, input_size)
+        self.linear1 = nn.Linear(input_size, input_size)
+        self.linear2 = nn.Linear(input_size, input_size)
+
         # we use the input as value since is free
         self.mha = nn.MultiheadAttention(
             embed_dim=input_size, num_heads=num_heads, batch_first=True
         )
-        self.gru = nn.GRU(
-            input_size=input_size,
-            hidden_size=input_size,
-            num_layers=1,
-            batch_first=True,
-        )
 
     def forward(self, sess2items_tensor):
         # sess2items_tensor [batch_size, k, embedding_dimension]
-        query = self.activation(self.qw(sess2items_tensor))
-        key = self.activation(self.kw(sess2items_tensor))
-        # value = self.activation(self.vw(sess2items_tensor))
-        # [batch_size, k, embedding_dimension]
-        attn_out, _ = self.mha(query, key, sess2items_tensor)
-        # session_repr = torch.mean(attn_out, dim=1)
-        _, hidden_states = self.gru(attn_out)
+        attn_out, _ = self.mha(sess2items_tensor, sess2items_tensor, sess2items_tensor)
+        # apply feedforward
+        out = self.linear2(self.activation(self.linear1(attn_out)))
+        # out is shape [batch_size, k, emb_dim]
+        # use as session embedding the representation of last item
+        session_embedding = out[:, -1, :]
+
         # final hidden state is of size [num_layers, batch_size, hidden_size] need squeeze
         # return session_repr
-        return torch.squeeze(hidden_states[-1, :, :])
+        return session_embedding
 
 
 class ContextAttention(nn.Module):
