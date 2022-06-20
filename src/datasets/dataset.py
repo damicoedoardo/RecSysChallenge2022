@@ -454,12 +454,12 @@ class Dataset:
 
 
 if __name__ == "__main__":
+    print("Running preprocess methods...")
     dataset = Dataset()
-    # dataset.create_sess_features()
-    # print(dataset.get_candidate_items())
-    # dataset.preprocess_data()
-    # dataset.split_data()
-    # dataset.preprocess_item_features_oh()
-    # dataset.create_sess2items_list_dict()
-    # df = dataset.get_sess2items()
-    # print(df[4440001])
+    dataset.preprocess_data()
+    dataset.split_data()
+    dataset.create_sess2items_list_dict()
+    dataset.preprocess_item_features_oh()
+    dataset.create_local_candidate_items()
+    dataset.create_sess_features()
+    print("- Preprocessing completed succesfully!")
