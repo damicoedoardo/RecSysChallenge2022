@@ -62,6 +62,9 @@ class Dataset:
     def get_final_xgboost_dataset_folder(self) -> Path:
         return self.get_xgboost_dataset_folder() / "final"
 
+    def get_xgboost_model_folder(self) -> Path:
+        return self.get_preprocessed_data_path() / "xgb_saved_model"
+
     def get_item_mapping_dicts(self) -> Tuple[Dict[int, int], Dict[int, int]]:
         """Return the item mapping dictionaries
 
@@ -92,6 +95,8 @@ class Dataset:
         self.get_train_xgboost_dataset_folder().mkdir(parents=True, exist_ok=True)
         self.get_leaderboard_xgboost_dataset_folder().mkdir(parents=True, exist_ok=True)
         self.get_final_xgboost_dataset_folder().mkdir(parents=True, exist_ok=True)
+
+        self.get_xgboost_model_folder().mkdir(parents=True, exist_ok=True)
 
     ##########################################
     ####### PREPROCESS DATA METHODS #########
@@ -450,7 +455,7 @@ class Dataset:
 
 if __name__ == "__main__":
     dataset = Dataset()
-    dataset.create_sess_features()
+    # dataset.create_sess_features()
     # print(dataset.get_candidate_items())
     # dataset.preprocess_data()
     # dataset.split_data()

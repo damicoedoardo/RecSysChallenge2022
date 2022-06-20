@@ -90,25 +90,25 @@ if __name__ == "__main__":
 
     # model parameters
     parser.add_argument("--session_embedding_kind", type=str, default="context_attn")
-    parser.add_argument("--layers_size", type=list, default=[963, 256])
+    parser.add_argument("--layers_size", type=list, default=[512, 256])
     parser.add_argument("--embedding_dimension", type=int, default=256)
     parser.add_argument("--features_num", type=int, default=963)
     parser.add_argument("--k", type=int, default=10)
 
     # train parameters
-    parser.add_argument("--epochs", type=int, default=6)
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--val_every", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--l2_reg", type=float, default=0)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--early_stopping_round", type=int, default=5)
 
     # loss function parameter
-    parser.add_argument("--margin", type=float, default=0.8)
-    parser.add_argument("--negative_weight", type=int, default=0.5)
+    parser.add_argument("--margin", type=float, default=0.7)
+    parser.add_argument("--negative_weight", type=int, default=1)
     parser.add_argument("--negative_samples_num", type=int, default=1000)
-    parser.add_argument("--context_weight", type=int, default=0.1)
-    parser.add_argument("--context_samples_num", type=int, default=2)
+    # parser.add_argument("--context_weight", type=int, default=0.1)
+    # parser.add_argument("--context_samples_num", type=int, default=2)
 
     # GPU config
     parser.add_argument("--gpu", type=bool, default=True)
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument("--days_to_keep", type=int, default=150)
 
     # TRAIN for final prediction
-    parser.add_argument("--train_valtest", type=bool, default=True)
+    parser.add_argument("--train_valtest", type=bool, default=False)
 
     # get variables
     args = vars(parser.parse_args())
@@ -136,6 +136,9 @@ if __name__ == "__main__":
     val, val_label = split_dict[VAL]
     test, test_label = split_dict[TEST]
 
+    val_test = pd.concat([val, test])
+    val_test_label = pd.concat([val_label, test_label])
+
     # Considering seasonality by training using the sessions only on the last x days of the training set available
     print(
         "Using the last: {} days sessions to train the model".format(
@@ -149,8 +152,14 @@ if __name__ == "__main__":
     final_train_data = train[train[SESS_ID].isin(id_filtered_train)]
     final_train_label = train_label[train_label[SESS_ID].isin(id_filtered_train)]
 
-    # If the model has to be trained for the prediction train val and test has to be merged together
+    # lc = dataset.get_local_candidate_items()
+    # c = dataset.get_candidate_items()
+    # candidates = pd.concat([lc, c]).drop_duplicates().values.squeeze()
+    # final_train_label = train_label[train_label[ITEM_ID].isin(candidates)]
+    # id_filtered_train = final_train_label[SESS_ID].unique()
+    # final_train_data = train[train[SESS_ID].isin(id_filtered_train)]
 
+    # If the model has to be trained for the prediction train val and test has to be merged together
     if args["train_valtest"]:
         print("Training model for final predictions with the whole data available...")
         args["val_every"] = -1
@@ -164,7 +173,7 @@ if __name__ == "__main__":
     #     else "cpu"
     # )
 
-    device = torch.device("cuda:1") if args["gpu"] else torch.device("cpu")
+    device = torch.device("cuda:2") if args["gpu"] else torch.device("cpu")
 
     print("Using device {}".format(device))
 
@@ -284,3 +293,74 @@ if __name__ == "__main__":
             dataset.get_saved_models_path() / save_path,
         )
         print("Trained model with name: {}, saved succesfully".format(run_name))
+        lead_data = dataset.get_test_leaderboard_sessions()
+        final_data = dataset.get_test_final_sessions()
+
+        model.eval()
+
+        temp_recs_lead = []
+        unique_sess = lead_data[SESS_ID].unique()
+        sess_batches = np.split(unique_sess, 5)
+        for batch in sess_batches:
+            lead_data_filtered = lead_data[lead_data[SESS_ID].isin(batch)]
+            recs_lead_b = model.recommend(
+                interactions=lead_data_filtered,
+                remove_seen=True,
+                cutoff=100,
+                leaderboard=True,
+            )
+            temp_recs_lead.append(recs_lead_b)
+        recs_lead = pd.concat(temp_recs_lead)
+
+        recs_lead.reset_index(drop=True).to_feather(
+            dataset.get_leaderboard_recs_df_folder() / "context_attn.feather"
+        )
+
+        temp_recs_final = []
+        unique_sess = final_data[SESS_ID].unique()
+        sess_batches = np.split(unique_sess, 5)
+        for batch in sess_batches:
+            final_filtered = final_data[final_data[SESS_ID].isin(batch)]
+            recs_final_b = model.recommend(
+                interactions=final_filtered,
+                remove_seen=True,
+                cutoff=100,
+                leaderboard=True,
+            )
+            temp_recs_final.append(recs_final_b)
+        recs_final = pd.concat(temp_recs_final)
+        # todo for final
+        # recs_final = model.recommend(
+        #     interactions=final_data, remove_seen=True, cutoff=100, leaderboard=True
+        # )
+        recs_final.reset_index(drop=True).to_feather(
+            dataset.get_final_recs_df_folder() / "context_attn.feather"
+        )
+    else:
+        pass
+        # model.eval()
+
+        # temp_recs = []
+        # unique_sess = val_test[SESS_ID].unique()
+        # sess_batches = np.split(unique_sess, 5)
+        # for batch in sess_batches:
+        #     val_test_batch = val_test[val_test[SESS_ID].isin(batch)]
+        #     batch_recs = model.recommend(
+        #         interactions=val_test_batch,
+        #         remove_seen=True,
+        #         cutoff=100,
+        #         leaderboard=False,
+        #     )
+        #     temp_recs.append(batch_recs)
+        # recs_val_test = pd.concat(temp_recs)
+
+        # # recs_val = model.recommend(
+        # #     interactions=val_test, remove_seen=True, cutoff=100, leaderboard=False
+        # # )
+
+        # # recs = pd.concat([recs_val, recs_test])
+        # recs = pd.concat(temp_recs)
+        # compute_mrr(recs, val_test_label)
+        # recs.reset_index(drop=True).to_feather(
+        #     dataset.get_train_recs_df_folder() / "context_attn.feather"
+        # )
